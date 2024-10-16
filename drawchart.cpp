@@ -718,7 +718,7 @@ void DrawChart::appendAnnNews(int end)
             t=GlobalVar::annoucementList.at(i)[2];
             time=t.mid(1,10);
 
-            if (j>=0 and j< nKdCount)
+            if (j>=0 and j< nKdCount) // fixed  CandleChart线程发生时，会引起index out of range!
               result=QString::compare(GlobalVar::mCandleChartList.at(j).time,time);
             else
               result=0;

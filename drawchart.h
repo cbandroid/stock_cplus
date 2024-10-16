@@ -11,8 +11,6 @@
 #include <QListView>
 #include <QStringListModel>
 
-
-
 class DrawChart : public QWidget
 {
     Q_OBJECT
