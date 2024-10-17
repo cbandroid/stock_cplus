@@ -24,8 +24,9 @@ ThreadTimeShareTick::ThreadTimeShareTick(QObject *parent)
 void ThreadTimeShareTick::getBuySellTimeShareTick(bool reset)
 {
     QString t=GlobalVar::curCode.left(3);
-    QString o=GlobalVar::curCode.left(1);
-    if (o=="1" or t=="399" or t=="899" or o=="9")
+    QList<QString> list;
+    list<<"100"<<"122"<<"133"<<"103"<<"104";
+    if (list.contains(t))
     {
         if (preCode==GlobalVar::curCode)
             return;
@@ -50,7 +51,7 @@ void ThreadTimeShareTick::getBuySellTimeShareTick(bool reset)
             emit getBuySellFinished();
         }
         QString pos="-0";
-        if (preCode==GlobalVar::curCode and not reset)
+        if (preCode==GlobalVar::curCode and not reset and GlobalVar::WhichInterface==1)
              pos="-10";
 
         GlobalVar::getData(timeShareTickData,0.9f,QUrl("http://push2.eastmoney.com/api/qt/stock/details/get?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos="+pos+"&secid="+GlobalVar::getComCode()));
@@ -85,11 +86,17 @@ void ThreadTimeShareTick::getSSEData(int nums,QString url)
         reply->deleteLater();
         delete qByteArray;
         naManager->deleteLater();
+        delete naManager;
     });
     connect(reply, &QNetworkReply::readyRead, this, [=](){
         // qDebug()<<reply->error();
         if (GlobalVar::curCode!=preCode)
-            reply->abort();
+        {
+         //   reply->abort();
+            reply->disconnect();
+            reply->close();
+            reply->deleteLater();
+        }
         else if (reply->error() == QNetworkReply::NoError)
         {
             QByteArray tempData=reply->readAll();
@@ -209,24 +216,22 @@ void ThreadTimeShareTick::initTimeShareTickList(QString pos)
             GlobalVar::mTimeShareTickList.clear();
         else
         {
-            if (code!=GlobalVar::curCode)
+            int n= GlobalVar::mTimeShareTickList.size();
+            if (n==0)  // fixed 2024.10.17
                 return;
-            if (not GlobalVar::mTimeShareTickList.empty())
+            QString t=GlobalVar::mTimeShareTickList.at(n-1).time;
+            for (int i = 0; i < s; ++i)
             {
-                QString t=GlobalVar::mTimeShareTickList.at(GlobalVar::mTimeShareTickList.size()-1).time;
-                for (int i = 0; i < s; ++i)
+                list=data.at(i).toString().split(",");
+                if (list[0]<=t)
                 {
-                    list=data.at(i).toString().split(",");
-                    if (list[0]<=t)
-                    {
-                        if (i==s-1)
-                            return;
-                    }
-                    else
-                    {
-                        j=i;
-                        break;
-                    }
+                    if (i==s-1)
+                        return;
+                }
+                else
+                {
+                    j=i;
+                    break;
                 }
             }
         }
@@ -253,7 +258,8 @@ void ThreadTimeShareTick::initSSETimeShareTickList()
         QJsonArray data=jsonObject.value("data").toObject().value("details").toArray();
         timeShareTickInfo info;
         QStringList list;
-        for (int i = 0; i < data.size(); ++i)
+        int size = data.size();
+        for (int i = 0; i < size; ++i)
         {
             list=data.at(i).toString().split(",");
             info.time=list[0];
