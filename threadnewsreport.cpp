@@ -5,7 +5,7 @@ ThreadNewsReport::ThreadNewsReport(QObject *parent)
     : QObject{parent}
 {
     tts->setLocale(QLocale::Chinese);
-    tts->setRate(0.1);
+    tts->setRate(GlobalVar::speechrate); //fixed 蓝牙音箱
     tts->setPitch(0.0);
     tts->setVolume(1);
     QDateTime c=QDateTime::currentDateTime();

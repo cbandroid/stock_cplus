@@ -45,6 +45,7 @@ void MainWindow::initGlobalVar()
     GlobalVar::settings=new QSettings(GlobalVar::currentPath+"/config.ini",QSettings::IniFormat,this);
     GlobalVar::curCode=GlobalVar::settings->value("curCode").toString();
     GlobalVar::isSayNews=GlobalVar::settings->value("sayNews").toBool();
+    GlobalVar::speechrate=GlobalVar::settings->value("speechrate").toFloat();
     GlobalVar::offsetEnd=GlobalVar::settings->value("offsetEnd").toInt();
     downloadDate=GlobalVar::settings->value("curTime").toString();
     account=GlobalVar::settings->value("account").toString();

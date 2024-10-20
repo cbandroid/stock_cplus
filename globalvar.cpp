@@ -590,6 +590,7 @@ QPalette GlobalVar::pWhite;
 int GlobalVar::upNums[3];
 int GlobalVar::downNums[3];
 bool GlobalVar::isSayNews=true;
+float GlobalVar::speechrate=0.1;
 int GlobalVar::trendsTotal=0;
 int GlobalVar::curBlock=0;
 QString GlobalVar::currentPath;

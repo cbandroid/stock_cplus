@@ -97,6 +97,7 @@ public:
     static int downNums[3];
     static int trendsTotal;
     static bool isSayNews;
+    static float speechrate;
     static int curBlock;
     static QString currentPath;
     static int offsetEnd;
