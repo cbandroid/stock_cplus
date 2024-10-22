@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
         qApp->quit();
         return -1;
     }
-
+      ::SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
     MainWindow *w = new MainWindow ;
     a.installEventFilter(w);
     w->showMaximized();
