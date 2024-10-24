@@ -4,6 +4,7 @@
 ThreadNewsReport::ThreadNewsReport(QObject *parent)
     : QObject{parent}
 {
+
     tts->setLocale(QLocale::Chinese);
     tts->setRate(GlobalVar::speechrate); //fixed 蓝牙音箱
     tts->setPitch(0.0);
@@ -21,12 +22,12 @@ void ThreadNewsReport::getNewsData()
     if (tts->state() == QTextToSpeech::Speaking)
         return;
     newsContent="";
-    GlobalVar::getData(allData,2,QUrl("https://finance.eastmoney.com/yaowen.html"));
+    GlobalVar::getData(allData,3,QUrl("https://finance.eastmoney.com/yaowen.html"));
     if (GlobalVar::timeOutFlag[4])
         GlobalVar::timeOutFlag[4]=false;
     else
         initEastNews();
-    GlobalVar::getData(allData,2,QUrl("https://www.jin10.com/flash_newest.js?t=1667528593473"));
+    GlobalVar::getData(allData,3,QUrl("https://www.jin10.com/flash_newest.js?t=1667528593473"));
 
     if (GlobalVar::timeOutFlag[3])
         GlobalVar::timeOutFlag[3]=false;
@@ -150,7 +151,16 @@ void ThreadNewsReport::sayJsNews(QJsonObject object)
         QString dt=object.value("time").toString();
         if (jinShiNewsReportCurTime>=dt)
             return;
-        newsContent+=newsText;
+               
+        QString sText = newsText;
+        sText.replace("<b>","");
+        sText.replace("</b","");        
+        sText.replace("<br/>","");
+        sText.replace("</span>>","");
+        sText.replace("<span class=\"section-news\">","");
+        sText.replace("<br>","");
+        
+        newsContent+=sText;
         // if (GlobalVar::isSayNews)
         //     tts->say(newsText);
         id=newId;
