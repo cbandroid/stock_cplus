@@ -156,7 +156,7 @@ void ThreadNewsReport::sayJsNews(QJsonObject object)
         sText.replace("<b>","");
         sText.replace("</b","");        
         sText.replace("<br/>","");
-        sText.replace("</span>>","");
+        sText.replace("</span>","");
         sText.replace("<span class=\"section-news\">","");
         sText.replace("<br>","");
         
