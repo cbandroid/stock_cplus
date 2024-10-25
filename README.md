@@ -9,3 +9,5 @@
 6.最近交易日标识<br>
 7.增加可选的的数据源<br>
 8.增加按缠论解说，对数据进行分析与处理，从而判断出买卖点<br>
+
+![688256](https://github.com/user-attachments/assets/2d4d89c2-bb95-4a3e-bb9f-8aa17bd8a7b2)
