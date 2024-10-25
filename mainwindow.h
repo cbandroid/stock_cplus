@@ -115,9 +115,9 @@ private:
     bool isAsia=true;
     bool isTraversalMyStock=false;
     int ifCanClick=1;
-    QString freq="101";
+    QString freq="1"; 
     QString adjustFlag="0";
-    QRadioButton *periodAdjust[6];
+    QRadioButton *periodAdjust[9];
     QPushButton *F10Info[6];
     QPushButton *fundFlow[10];
     QString preCode="";

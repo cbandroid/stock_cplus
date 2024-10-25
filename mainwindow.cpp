@@ -206,16 +206,17 @@ void MainWindow::initInterface()
     rightLayout->addWidget(newsData);
     rightLayout->addLayout(freqAdjustLayout);
     QButtonGroup *freq=new QButtonGroup(this);
-    QStringList periodAdjustName={"日线","周线","月线","不复权","前复权","后复权"};
-    for (int i=0;i<6;++i)
+    QStringList periodAdjustName={"1F","5F","30F","日线","周线","月线","不复权","前复权","后复权"};
+  
+    for (int i=0;i<9;++i)
     {
         periodAdjust[i]=new QRadioButton(periodAdjustName[i],this);
-        if (i<3)
+        if (i<6)
             freq->addButton(periodAdjust[i]);
         freqAdjustLayout->addWidget(periodAdjust[i]);
     }
     periodAdjust[0]->setChecked(true);
-    periodAdjust[3]->setChecked(true);
+    periodAdjust[6]->setChecked(true);
 
     drawChart.timeShareChart->setMinimumHeight(300);
     rightLayout->addWidget(drawChart.timeShareChart);
@@ -775,7 +776,7 @@ void MainWindow::initSignals()
         // if (GlobalVar::settings->value("isSetVacation").toString()==QDateTime::currentDateTime().toString("yyyy"))
         //     ui->setVacation->setEnabled(false);
     });
-    for (int i=0;i<6;++i)
+    for (int i=0;i<9;++i)
     {
         connect(mFundFlow.checkBox[i],&QCheckBox::clicked,this,[=](){
             if (mFundFlow.checkBox[i]->isChecked())
@@ -786,18 +787,24 @@ void MainWindow::initSignals()
         });
         connect(periodAdjust[i],&QRadioButton::clicked,this,[=](){
             if (i==0)
-                freq="101";
+                 freq="1";
             else if (i==1)
-                freq="102";
+                freq="5";
             else if (i==2)
-                freq="103";
+                freq="30";
             else if (i==3)
-                adjustFlag="0";
+                freq="101";
             else if (i==4)
-                adjustFlag="1";
+                freq="102";
             else if (i==5)
-                adjustFlag="2";
-            if (GlobalVar::isKState)
+                freq="103";
+            else if (i==6)
+                adjustFlag="0";
+            else if (i==7)
+                adjustFlag="1";
+            else if (i==8)
+                adjustFlag="2"; 
+            if (GlobalVar::isKState )
             {
                 preCode="";
                 //        resetKParameter();
@@ -1266,6 +1273,12 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             if (hisTimeShareN>GlobalVar::mCandleChartList.count()-1 or hisTimeShareN<0)
                 return true;
             QString date=GlobalVar::mCandleChartList.at(hisTimeShareN).time;
+            if (freq=="1" or freq=="7" or freq=="5" or freq=="15" or freq=="30" or freq=="60")
+            {
+                QStringList list=date.split(" ");
+                date=list[0];
+            }
+
             mFundFlow.getTimeShareMin(GlobalVar::getStockSymbol(),date);
             drawChart.hisTimeShareChart->show();
             drawChart.title->setText(GlobalVar::curName.left(GlobalVar::curName.indexOf("("))+" "+date+"分时图");
@@ -1280,8 +1293,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         else if (event->type() == QEvent::Wheel)
         {
             QWheelEvent *ev = static_cast<QWheelEvent *>(event);
-            if (drawChart.hisTimeShareChart->isHidden())
+            if (drawChart.hisTimeShareChart->isHidden()){
                 downUpLookStock(ev);
+                 return true;
+            }
             else
             {
                 if (ev->angleDelta().y()<0)
@@ -1605,7 +1620,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
             if (GlobalVar::KRange<50)
             {
                 GlobalVar::KRange=50;
-                return;
+              //  return; // fixed 2024.10.8
             }
             GlobalVar::offsetLocal=GlobalVar::offsetLocal-temp+GlobalVar::KRange;
 //            if (GlobalVar::offsetLocal<GlobalVar::KRange)
@@ -1668,7 +1683,11 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 }
 void MainWindow::wheelEvent(QWheelEvent *event)
 {
-    downUpLookStock(event);
+    if (not GlobalVar::isKState)
+    {
+         downUpLookStock(event);
+    }
+   
 }
 void MainWindow::setMarket()
 {
