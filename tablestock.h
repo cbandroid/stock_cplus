@@ -2,15 +2,13 @@
 #define TABLESTOCK_H
 
 #include <QTableView>
-#include <modeltablestock.h>
 #include <QAbstractItemView>
 #include <QScrollBar>
-#include "modelfundflow.h"
-#include "modeltimeshare.h"
 #include <QStandardItemModel>
-#include "commondelegate.h"
-#include "qheaderview.h"
-#include "globalvar.h"
+
+class ModelTableStock;
+class ModelFundFlow;
+class ModelTimeShare;
 
 class TableStock : public QTableView
 {

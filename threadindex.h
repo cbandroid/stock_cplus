@@ -2,7 +2,7 @@
 #ifndef THREADINDEX_H
 #define THREADINDEX_H
 
-#include "globalvar.h"
+#include <QObject>
 
 class ThreadIndex : public QObject
 {

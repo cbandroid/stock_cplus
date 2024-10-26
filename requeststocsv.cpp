@@ -1,4 +1,5 @@
-
+#include "globalvar.h"
+#include "downloadtask.h"
 #include "requeststocsv.h"
 
 
@@ -347,6 +348,20 @@ void RequestsToCsv::downloadAllStockK()
         DownloadTask *workTask=new DownloadTask(this);
         workTask->nums=i;
         threadPool.start(workTask);
+    }
+}
+
+Q_INVOKABLE void RequestsToCsv::setText()
+{
+    downloadedNums+=1;
+    int n=GlobalVar::mTableListCopy.count();
+    numLine->setText(QString::number(n-downloadedNums));
+    progressBar->setValue(downloadedNums);
+    if (downloadedNums==n)
+    {
+        stopBtn->setEnabled(false);
+        stopBtn->setText("下载完成");
+        GlobalVar::settings->setValue("isDownloadK",curDate);
     }
 }
 

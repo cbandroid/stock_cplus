@@ -2,18 +2,10 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include "qheaderview.h"
-#include "qspinbox.h"
-#include "stockinfo.h"
-#include "jspickstock.h"
-#include "qgridlayout.h"
+
+
+#include <qgridlayout.h>
 #include "tablestock.h"
-#include "threadtable.h"
-#include "threadindex.h"
-#include "threadnewsreport.h"
-#include "threadtimesharetick.h"
-#include "threadtimesharechart.h"
-#include "threadcandlechart.h"
 #include "drawchart.h"
 #include "searchstock.h"
 #include "requeststocsv.h"
@@ -43,6 +35,16 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class JSPickStock;
+class ThreadTable;
+class ThreadIndex;
+class ThreadTimeShareTick;
+class ThreadTimeShareChart ;
+class ThreadNewsReport;
+class ThreadCandleChart;
+
+
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -62,6 +64,10 @@ private slots:
     void dealWithFundFlow();
     void fastTrade();
     void delMyStock();
+    void min15Kline();
+    void min60Kline();
+    void quarterKline();
+    void yearKline();
 
 signals:
     void startThreadTable();
@@ -73,14 +79,14 @@ signals:
 
 private:
     Ui::MainWindow *ui;
-    QProcess *QMTProcess=new QProcess(this);
+    QProcess *QMTProcess;
     TableStock mTableStock;
     DrawChart drawChart;
     SearchStock searchStock;
     RequestsToCsv requestsToCsv;
     F10View f10View;
     FundFlow mFundFlow;
-    JSPickStock *mPickStock=new JSPickStock;
+    JSPickStock *mPickStock;
     ThreadTable *threadTable;
     ThreadIndex *threadIndex;
     ThreadTimeShareTick *threadTimeShareTick;
@@ -149,9 +155,9 @@ private:
 
 
 protected:
-    bool eventFilter(QObject *obj, QEvent *event);//事件过滤器
-    void mousePressEvent(QMouseEvent *event);
-    void keyPressEvent(QKeyEvent *event);
-    void wheelEvent(QWheelEvent *event);
+    bool eventFilter(QObject *obj, QEvent *event) override;//事件过滤器
+    void mousePressEvent(QMouseEvent *event)  override;
+    void keyPressEvent(QKeyEvent *event)  override;
+    void wheelEvent(QWheelEvent *event)  override;
 };
 #endif // MAINWINDOW_H

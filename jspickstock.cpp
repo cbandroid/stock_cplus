@@ -1,3 +1,6 @@
+#include <QTextCodec>
+#include <QLineEdit>
+#include "globalvar.h"
 #include "jspickstock.h"
 
 JSPickStock::JSPickStock(QDialog *parent)
@@ -162,7 +165,7 @@ void JSPickStock::PickStockInterface()
                 file.write(GlobalVar::formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
         file.close();
     });
-//    connect(formulaTree,&QTreeWidget::itemDoubleClicked,this,[=](QTreeWidgetItem *item){
+//    connect(formulaTree,&QTreeWidget::itemfloatClicked,this,[=](QTreeWidgetItem *item){
 //        GlobalVar::formulaContent=item->text(0);
 //    });
     connect(formulaTree,&QTreeWidget::itemChanged,this,[=](QTreeWidgetItem *item){

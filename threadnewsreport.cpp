@@ -1,10 +1,11 @@
 
+#include "globalvar.h"
 #include "threadnewsreport.h"
 
 ThreadNewsReport::ThreadNewsReport(QObject *parent)
     : QObject{parent}
 {
-
+     tts=new QTextToSpeech(this);
     tts->setLocale(QLocale::Chinese);
     tts->setRate(GlobalVar::speechrate); //fixed 蓝牙音箱
     tts->setPitch(0.0);

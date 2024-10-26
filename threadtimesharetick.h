@@ -2,7 +2,6 @@
 #ifndef THREADTIMESHARETICK_H
 #define THREADTIMESHARETICK_H
 
-#include "globalvar.h"
 #include <QFile>
 #include <QTextCodec>
 

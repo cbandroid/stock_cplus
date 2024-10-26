@@ -8,7 +8,6 @@
 #include <QTextCodec>
 #include <QKeyEvent>
 #include <QTextBlock>
-#include "globalvar.h"
 
 class SearchStock : public QLineEdit
 {

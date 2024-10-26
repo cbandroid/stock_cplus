@@ -1,4 +1,4 @@
-
+#include "globalvar.h"
 #include "searchstock.h"
 
 

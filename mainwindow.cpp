@@ -1,4 +1,17 @@
+#include <QTextCodec>
+#include "globalvar.h"
 #include "mainwindow.h"
+#include <qheaderview.h>
+#include "stockinfo.h"
+#include "jspickstock.h"
+#include "threadtable.h"
+#include "threadindex.h"
+#include "threadnewsreport.h"
+#include "threadtimesharetick.h"
+#include "threadtimesharechart.h"
+#include "threadcandlechart.h"
+#include "modeltablestock.h"
+#include "modelfundflow.h"
 #include "ui_mainwindow.h"
 
 MainWindow::MainWindow(QWidget *parent)
@@ -8,6 +21,8 @@ MainWindow::MainWindow(QWidget *parent)
     Py_Initialize();
     pModule=PyImport_ImportModule("qmt");
 
+    QMTProcess=new QProcess(this);
+    mPickStock=new JSPickStock;
     initGlobalVar();
     initThread();
     initInterface();
@@ -828,6 +843,50 @@ void MainWindow::initSignals()
             QMessageBox::information(this,"提示", "交易已经启动", QMessageBox::Ok);
     });
 }
+
+
+void MainWindow::min15Kline()
+{
+    freq="15";
+    preCode="";
+    //resetKParameter();
+    GlobalVar::isReqK=true;
+    lastTime=QDateTime::currentDateTime();
+    emit startThreadCandleChart(freq,adjustFlag,true);
+}
+
+void MainWindow::min60Kline()
+{
+    freq="60";
+    preCode="";
+    //resetKParameter();
+    GlobalVar::isReqK=true;
+    lastTime=QDateTime::currentDateTime();
+    emit startThreadCandleChart(freq,adjustFlag,true);
+}
+
+void MainWindow::quarterKline()
+{
+    freq="104";
+    preCode="";
+    //resetKParameter();
+    GlobalVar::isReqK=true;
+    lastTime=QDateTime::currentDateTime();
+    emit startThreadCandleChart(freq,adjustFlag,true);
+}
+
+void MainWindow::yearKline()
+{
+    freq="105";
+    preCode="";
+    //resetKParameter();
+    GlobalVar::isReqK=true;
+    lastTime=QDateTime::currentDateTime();
+    emit startThreadCandleChart(freq,adjustFlag,true);
+}
+
+
+
 void MainWindow::saveCode()
 {
     if (GlobalVar::curCode.length()!=5 and GlobalVar::curCode.left(1)!="1")
@@ -1467,9 +1526,12 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 }
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->pos().ry()<250 and event->button()==Qt::RightButton)
+    if (event->pos().ry()<250 and event->button()==Qt::RightButton){
         if (GlobalVar::WhichInterface==1 or (GlobalVar::WhichInterface==4 and GlobalVar::isKState))
             addRightMenu(3);
+    }
+    else
+        QMainWindow::mousePressEvent(event);
 }
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
@@ -1680,6 +1742,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         toInterFace("f10");
     else if (key==Qt::Key_Delete and mTableStock.myStockView->hasFocus())
         delMyStock();
+    QMainWindow::keyPressEvent(event);
 }
 void MainWindow::wheelEvent(QWheelEvent *event)
 {
@@ -1785,6 +1848,32 @@ void MainWindow::addRightMenu(int num)
     QIcon icon(":/new/png/png/join.jpg");
     act->setIcon(icon);
     menu->addAction(act);
+    
+     if (GlobalVar::isKState and num==3)
+     {
+       
+        menu->addSeparator();
+        QAction *act1=new QAction("15分钟K线",menu);
+        QIcon icon1(":/new/png/png/kline.png");
+        act1->setIcon(icon1);
+        menu->addAction(act1);
+        QAction *act2=new QAction("60分钟K线",menu);
+        act2->setIcon(icon1);
+        menu->addAction(act2);
+        menu->addSeparator();
+        QAction *act3=new QAction("季K线",menu);
+        act3->setIcon(icon1);
+        menu->addAction(act3);
+        QAction *act4=new QAction("年K线",menu);
+        act4->setIcon(icon1);
+        menu->addAction(act4);
+        
+        connect(act1,&QAction::triggered,this,&MainWindow::min15Kline);
+        connect(act2,&QAction::triggered,this,&MainWindow::min60Kline);
+        connect(act3,&QAction::triggered,this,&MainWindow::quarterKline);
+        connect(act4,&QAction::triggered,this,&MainWindow::yearKline);
+     }
+    
     menu->popup(QCursor::pos());
     StockInfo info;
     QString code;

@@ -2,7 +2,7 @@
 #ifndef FUNDFLOW_H
 #define FUNDFLOW_H
 
-#include "qlabel.h"
+#include <qlabel.h>
 #include <QTableView>
 #include <QStandardItemModel>
 //#include <QNetworkAccessManager>
@@ -14,9 +14,9 @@
 #include <QNetworkCookie>
 #include <QDialog>
 #include <QPainter>
-#include <complex>
+//#include <complex>
 #include <QCheckBox>
-#include "globalvar.h"
+
 
 class FundFlow : public QTableView
 {
@@ -40,7 +40,7 @@ public:
     float fiveTotal[5]={0.0};
     float twentyTotal[5]={0.0};
     bool isShow[6]={true,true,true,true,false,false};
-    QCheckBox *checkBox[6];
+    QCheckBox *checkBox[9]; // fixed 2024.10.7
     QLabel *backGround=new QLabel(fundFlowChart);
     QLabel *vKLine=new QLabel(fundFlowChart);
     QLabel *time=new QLabel(fundFlowChart);

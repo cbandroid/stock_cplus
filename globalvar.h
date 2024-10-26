@@ -17,6 +17,12 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QCoreApplication>
+#define  CNMARKET  1
+#define  HKMARKET  2
+#define  USMARKET  5
+#define  UKMARKET  6
+
+#define  FUNDMARKET  4
 
 class GlobalVar
 {

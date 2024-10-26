@@ -2,10 +2,9 @@
 #ifndef THREADTABLE_H
 #define THREADTABLE_H
 
-#include "globalvar.h"
 #include <QFile>
 #include <QTextCodec>
-
+#include "stockinfo.h"
 
 class ThreadTable : public QObject
 {
@@ -20,8 +19,9 @@ private:
     void reFlaseMyStock();
     QByteArray allData;
     int risingSpeedSize=29;
+    static bool compareStockInfoData(const  StockInfo &s1, const  StockInfo &s2);
 //    QNetworkAccessManager *naManager =new QNetworkAccessManager(this);
-
+     QString CNToEL(const QString &cnstr);
 signals:
     void getTableDataFinished();
 };

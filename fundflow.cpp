@@ -1,4 +1,4 @@
-
+#include "globalvar.h"
 #include "fundflow.h"
 
 FundFlow::FundFlow()
@@ -22,7 +22,7 @@ FundFlow::FundFlow()
 //        textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,0,255)}");
         textFund[i]->setGeometry(180+i*150,410,100,20);
     }
-    for (int i=0;i<6;++i)
+    for (int i=0;i<9;++i) //fixed 2024.10.7
     {
         checkBox[i]=new QCheckBox(tableChart);
         checkBox[i]->setGeometry(54+100*i,20,20,20);

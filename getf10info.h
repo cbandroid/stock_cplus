@@ -6,9 +6,7 @@
 #include <QJsonArray>
 #include <QTextCodec>
 #include <QFile>
-#include "qjsondocument.h"
-#include "qjsonobject.h"
-#include "globalvar.h"
+
 
 class GetF10Info : public QObject
 {

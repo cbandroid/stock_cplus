@@ -1,3 +1,4 @@
+#include "globalvar.h"
 #include "modelfundflow.h"
 
 ModelFundFlow::ModelFundFlow(QObject *parent)

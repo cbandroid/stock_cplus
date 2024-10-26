@@ -1,3 +1,4 @@
+#include "globalvar.h"
 #include "downloadtask.h"
 
 DownloadTask::DownloadTask(QObject *obj):

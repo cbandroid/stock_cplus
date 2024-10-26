@@ -2,14 +2,16 @@
 #ifndef DRAWCHART_H
 #define DRAWCHART_H
 
-#include "qdialog.h"
-#include "qlabel.h"
-#include "qtextbrowser.h"
+#include <qdialog.h>
+#include <qlabel.h>
+#include <qtextbrowser.h>
 #include <QWidget>
 #include <QPainter>
 #include <QMouseEvent>
 #include <QListView>
 #include <QStringListModel>
+
+
 
 class DrawChart : public QWidget
 {
@@ -49,14 +51,14 @@ public:
 
     void drawTimeShareChart(QPainter *painter);
     void drawHisTimeShare(QPainter *painter);
-    void drawCandleChart(QPainter *painter);
+    void drawCandleChart(QString freq,QPainter *painter);
     void calcHighLowPoint(int begin,int end);
     void calcTSHighLowPoint(int begin,int end);
     void appendAnnNews(int end);
     QString autoWordWrap(QString str,int width);
 
 public slots:
-    void annClicked(const QModelIndex index);
+    void annClicked(const QModelIndex index)  ;
 
 };
 

@@ -2,8 +2,8 @@
 #ifndef REQUESTSTOCSV_H
 #define REQUESTSTOCSV_H
 
-#include "qdialog.h"
-#include "qpushbutton.h"
+#include <qdialog.h>
+#include <qpushbutton.h>
 //#include "qwidget.h"
 #include <QObject>
 //#include <QNetworkAccessManager>
@@ -14,12 +14,12 @@
 #include <QVBoxLayout>
 #include <QProgressBar>
 #include <QLabel>
-#include "globalvar.h"
-#include "qmessagebox.h"
-#include "qpushbutton.h"
-#include "QDir"
-#include "downloadtask.h"
-#include "QThreadPool"
+
+#include <qmessagebox.h>
+#include <qpushbutton.h>
+#include <QDir>
+
+#include <QThreadPool>
 
 class RequestsToCsv : public QDialog
 {
@@ -34,19 +34,8 @@ public:
     void dealWithAllList();
     void downStockIndexPlateInfo();
     void downloadAllStockK();
-    Q_INVOKABLE void setText()
-    {
-        downloadedNums+=1;
-        int n=GlobalVar::mTableListCopy.count();
-        numLine->setText(QString::number(n-downloadedNums));
-        progressBar->setValue(downloadedNums);
-        if (downloadedNums==n)
-        {
-            stopBtn->setEnabled(false);
-            stopBtn->setText("下载完成");
-            GlobalVar::settings->setValue("isDownloadK",curDate);
-        }
-    }
+    Q_INVOKABLE void setText();
+   
 //    void baoShareStockK();
     QThreadPool threadPool;
     QDialog *progressBarWindow = new QDialog();

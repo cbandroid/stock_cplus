@@ -1,4 +1,4 @@
-
+#include "globalvar.h"
 #include "threadtimesharetick.h"
 
 ThreadTimeShareTick::ThreadTimeShareTick(QObject *parent)
@@ -39,14 +39,14 @@ void ThreadTimeShareTick::getBuySellTimeShareTick(bool reset)
     }
     else
     {
-        GlobalVar::getData(buySellData,0.9f,QUrl("http://push2.eastmoney.com/api/qt/stock/get?ut=fa5fd1943c7b386f172d6893dbfba10b&fltt=2&invt=1&volt=2&fields=f43,f44,f45,f46,f47,f48,f55,f58,f60,f62,f164,f167,f168,f170,f116,f84,f85,f162,f31,f32,f33,f34,f35,f36,f37,f38,f39,f40,f20,f19,f18,f17,f16,f15,f14,f13,f12,f11,f531&secid="+GlobalVar::getComCode()+"&_=1666089246963"));
+        GlobalVar::getData(buySellData,0.5f,QUrl("http://push2.eastmoney.com/api/qt/stock/get?ut=fa5fd1943c7b386f172d6893dbfba10b&fltt=2&invt=1&volt=2&fields=f43,f44,f45,f46,f47,f48,f55,f58,f60,f62,f164,f167,f168,f170,f116,f84,f85,f162,f31,f32,f33,f34,f35,f36,f37,f38,f39,f40,f20,f19,f18,f17,f16,f15,f14,f13,f12,f11,f531&secid="+GlobalVar::getComCode()+"&_=1666089246963"));
         if (GlobalVar::timeOutFlag[8])
             GlobalVar::timeOutFlag[8]=false;
         else
         {
             initBuySellList();
-            QString l=GlobalVar::curCode.left(1);
-            if (l=="3" or l=="6" or l=="0")
+           // QString l=GlobalVar::curCode.left(1);
+           // if (l=="3" or l=="6" or l=="0")
                 findStockArea();
             emit getBuySellFinished();
         }
@@ -54,7 +54,7 @@ void ThreadTimeShareTick::getBuySellTimeShareTick(bool reset)
         if (preCode==GlobalVar::curCode and not reset and GlobalVar::WhichInterface==1)
              pos="-10";
 
-        GlobalVar::getData(timeShareTickData,0.9f,QUrl("http://push2.eastmoney.com/api/qt/stock/details/get?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos="+pos+"&secid="+GlobalVar::getComCode()));
+        GlobalVar::getData(timeShareTickData,0.5f,QUrl("http://push2.eastmoney.com/api/qt/stock/details/get?fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55&mpi=2000&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&pos="+pos+"&secid="+GlobalVar::getComCode()));
         if (GlobalVar::timeOutFlag[7])
             GlobalVar::timeOutFlag[7]=false;
         else
@@ -128,6 +128,8 @@ void ThreadTimeShareTick::getSSEData(int nums,QString url)
             }
             else
             {
+              //  qDebug() <<"tempdata "<< tempData;
+                
                 qByteArray->append(tempData);
                 QByteArray tempByteArray=qByteArray->data();
                 //                qDebug()<<tempByteArray;
@@ -158,6 +160,7 @@ void ThreadTimeShareTick::getSSEData(int nums,QString url)
 void ThreadTimeShareTick::initBuySellList()
 {
     QJsonParseError jsonError;
+    //qDebug()<< "buySellData " <<buySellData;
     QJsonDocument doc = QJsonDocument::fromJson(buySellData, &jsonError);
     if (jsonError.error == QJsonParseError::NoError)
     {
@@ -201,11 +204,14 @@ void ThreadTimeShareTick::initBuySellList()
 void ThreadTimeShareTick::initTimeShareTickList(QString pos)
 {
     QJsonParseError jsonError;
+    //qDebug()<< "pos " << pos;
+    //qDebug()<< "timeShareTickData " << timeShareTickData;
+    
     QJsonDocument doc = QJsonDocument::fromJson(timeShareTickData, &jsonError);
     if (jsonError.error == QJsonParseError::NoError)
     {
         QJsonObject jsonObject = doc.object();
-        QString code=jsonObject.value("data").toObject().value("code").toString();
+        //QString code=jsonObject.value("data").toObject().value("code").toString();
         GlobalVar::preClose=jsonObject.value("data").toObject().value("prePrice").toDouble();
         QJsonArray data=jsonObject.value("data").toObject().value("details").toArray();
         int s=data.size();
@@ -251,7 +257,12 @@ void ThreadTimeShareTick::initTimeShareTickList(QString pos)
 void ThreadTimeShareTick::initSSETimeShareTickList()
 {
     QJsonParseError jsonError;
+    
+   // qDebug()<< "initSSETimeShareTickList " << timeShareTickData;
+    
+    
     QJsonDocument doc = QJsonDocument::fromJson(timeShareTickData, &jsonError);
+    
     if (jsonError.error == QJsonParseError::NoError)
     {
         QJsonObject jsonObject = doc.object();

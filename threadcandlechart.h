@@ -2,7 +2,8 @@
 #ifndef THREADCANDLECHART_H
 #define THREADCANDLECHART_H
 
-#include "globalvar.h"
+#include <QString>
+#include <qobject.h>
 
 class ThreadCandleChart : public QObject
 {

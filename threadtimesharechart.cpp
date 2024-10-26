@@ -1,4 +1,4 @@
-
+#include "globalvar.h"
 #include "threadtimesharechart.h"
 
 ThreadTimeShareChart::ThreadTimeShareChart(QObject *parent)
@@ -22,8 +22,8 @@ void ThreadTimeShareChart::getSSEData()
     QString url="https://push2his.eastmoney.com/api/qt/stock/trends2/sse?mpi=2000&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ut=fa5fd1943c7b386f172d6893dbfba10b&iscr=0&ndays=1&secid="+GlobalVar::getComCode()+"&_=1666401553893";
     QByteArray* qByteArray=new QByteArray();
     QNetworkRequest request;
-    //QNetworkAccessManager *naManager =new QNetworkAccessManager(this);
-    QNetworkAccessManager *naManager =new QNetworkAccessManager(); //fixed 2024.10.8
+    QNetworkAccessManager *naManager =new QNetworkAccessManager(this);
+   // QNetworkAccessManager *naManager =new QNetworkAccessManager(); //fixed 2024.10.8
    //  auto netManager = new QNetworkAccessManager(this);
     request.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36");
     request.setUrl(QUrl(url));
@@ -108,15 +108,17 @@ void ThreadTimeShareChart::getAllTimeShareChart(bool r)
     list<<"100"<<"122"<<"133"<<"103"<<"104";
     if (not list.contains(s))
     {
-        GlobalVar::getData(allData,2,QUrl("https://push2his.eastmoney.com/api/qt/stock/trends2/get?fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ut=fa5fd1943c7b386f172d6893dbfba10b&iscr=0&ndays=1&secid="+GlobalVar::getComCode()+"&_=1666401553893"));
+        GlobalVar::getData(allData,2.5,QUrl("https://push2his.eastmoney.com/api/qt/stock/trends2/get?fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ut=fa5fd1943c7b386f172d6893dbfba10b&iscr=0&ndays=1&secid="+GlobalVar::getComCode()+"&_=1666401553893"));
         if (GlobalVar::timeOutFlag[6])
             GlobalVar::timeOutFlag[6]=false;
         else
-		        {
+         {
             initTimeShareChartList();
             emit getTimeShareChartFinished();
-            if (list.contains(preGCode.left(3)))
-                reply->abort();
+            //if (list.contains(preGCode.left(3)))
+            //{
+             //  reply->abort();             
+            //}
         }
     }
     else if (preGCode!=GlobalVar::curCode or r)
@@ -146,13 +148,22 @@ void ThreadTimeShareChart::initTimeShareChartList()
         GlobalVar::preClose=jsonObject.value("data").toObject().value("preClose").toDouble();
         int ph=110;
         int pl=90;
-        if (GlobalVar::curCode.left(1)=="3" or GlobalVar::curCode.left(1)=="8" or GlobalVar::curCode.left(3)=="688")
+        float a=int(GlobalVar::preClose*ph+0.5)/100.0;
+        float b=int(GlobalVar::preClose*pl+0.5)/100.0;
+        if (GlobalVar::curCode.left(1)=="3" or GlobalVar::curCode.left(3)=="688")
         {
             ph=120;
             pl=80;
+            a=int(GlobalVar::preClose*ph+0.5)/100.0;
+            b=int(GlobalVar::preClose*pl+0.5)/100.0;
         }
-        float a=int(GlobalVar::preClose*ph+0.5)/100.0;
-        float b=int(GlobalVar::preClose*pl+0.5)/100.0;
+        else if(GlobalVar::curCode.left(1)=="4" or GlobalVar::curCode.left(1)=="8")
+        {
+            ph=130;
+            pl=70;
+            a=int(GlobalVar::preClose*ph)/100.0;
+            b=int(GlobalVar::preClose*pl)/100.0;
+        }
         GlobalVar::timeShareHighLowPoint[3]=per(a);
         GlobalVar::timeShareHighLowPoint[4]=per(b);
         QJsonArray data=jsonObject.value("data").toObject().value("trends").toArray();
@@ -248,13 +259,24 @@ void ThreadTimeShareChart::initSSETimeShareChartList()
                 GlobalVar::preClose=jsonObject.value("data").toObject().value("preClose").toDouble();
             int ph=110;
             int pl=90;
-            if (GlobalVar::curCode.left(1)=="3" or GlobalVar::curCode.left(1)=="8" or GlobalVar::curCode.left(3)=="688")
+            float a=int(GlobalVar::preClose*ph+0.5)/100.0;
+            float b=int(GlobalVar::preClose*pl+0.5)/100.0;
+            if (GlobalVar::curCode.left(1)=="3" or GlobalVar::curCode.left(3)=="688")
             {
                 ph=120;
                 pl=80;
+                a=int(GlobalVar::preClose*ph+0.5)/100.0;
+                b=int(GlobalVar::preClose*pl+0.5)/100.0;
             }
-            GlobalVar::timeShareHighLowPoint[3]=per(int(GlobalVar::preClose*ph+0.5)/100.0);
-            GlobalVar::timeShareHighLowPoint[4]=per(int(GlobalVar::preClose*pl+0.5)/100.0);
+            else if(GlobalVar::curCode.left(1)=="4" or GlobalVar::curCode.left(1)=="8")
+            {
+                ph=130;
+                pl=70;
+                a=int(GlobalVar::preClose*ph)/100.0;
+                b=int(GlobalVar::preClose*pl)/100.0;
+            }
+            GlobalVar::timeShareHighLowPoint[3]=per(a);
+            GlobalVar::timeShareHighLowPoint[4]=per(b);
             GlobalVar::timeShareHighLowPoint[2]=0;
             pp=0;
             int t=jsonObject.value("data").toObject().value("trendsTotal").toInt();

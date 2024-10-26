@@ -1,4 +1,4 @@
-
+#include "globalvar.h"
 #include "modeltablestock.h"
 
 ModelTableStock::ModelTableStock(QObject *parent)
