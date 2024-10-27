@@ -39,8 +39,8 @@ public:
     float degree[8]={0.0};
     float fiveTotal[5]={0.0};
     float twentyTotal[5]={0.0};
-    bool isShow[6]={true,true,true,true,false,false};
-    QCheckBox *checkBox[9]; // fixed 2024.10.7
+    bool isShow[9]={true,true,true,true,true,true,true,false,false};
+    QCheckBox *checkBox[9]; 
     QLabel *backGround=new QLabel(fundFlowChart);
     QLabel *vKLine=new QLabel(fundFlowChart);
     QLabel *time=new QLabel(fundFlowChart);
