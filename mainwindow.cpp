@@ -63,6 +63,7 @@ void MainWindow::initGlobalVar()
     GlobalVar::speechrate=GlobalVar::settings->value("speechrate").toFloat();
     GlobalVar::offsetEnd=GlobalVar::settings->value("offsetEnd").toInt();
     downloadDate=GlobalVar::settings->value("curTime").toString();
+    feelingDate=GlobalVar::settings->value("feelingTime").toString();
     account=GlobalVar::settings->value("account").toString();
 //    QString path=GlobalVar::currentPath+"/python/";
 //    Py_SetPythonHome((wchar_t *)(reinterpret_cast<const wchar_t *>(path.utf16())));
@@ -83,10 +84,13 @@ void MainWindow::initThread()
     threadTable->moveToThread(thread[0]);
     connect(threadTable,&ThreadTable::getTableDataFinished,this,[=](){
         mTableStock.setTableView();
-        baseInfoData[7]->setText(QString::number(GlobalVar::upNums[0]));
-        baseInfoData[16]->setText(QString::number(GlobalVar::downNums[0]));
-        baseInfoData[8]->setText(QString::number(GlobalVar::upNums[1])+"/"+QString::number(GlobalVar::upNums[2]));
-        baseInfoData[17]->setText(QString::number(GlobalVar::downNums[1])+"/"+QString::number(GlobalVar::downNums[2]));
+        feelingData[0]->setText(QString::number(GlobalVar::upNums[0]));
+        feelingData[1]->setText(QString::number(GlobalVar::upNums[1]));
+        feelingData[2]->setText(QString::number(GlobalVar::upNums[2])+"/"+QString::number(GlobalVar::upNums[3]));
+        feelingData[4]->setText(QString::number(GlobalVar::downNums[0]));
+        feelingData[5]->setText(QString::number(GlobalVar::downNums[1]));
+        feelingData[6]->setText(QString::number(GlobalVar::downNums[2])+"/"+QString::number(GlobalVar::downNums[3]));
+        feelingData[3]->setText(GlobalVar::format_conversion(threadIndex->totalAmount));
     });
     connect(this,&MainWindow::startThreadTable,threadTable,&ThreadTable::getTableData);
     thread[0]->start();
@@ -213,11 +217,15 @@ void MainWindow::initInterface()
     buySellLayout->setSpacing(2);
     buySellLayout->setContentsMargins(10, 5, 0, 0);
     newsData=new QTextBrowser(this);
+    newsData->setMaximumHeight(300);
     QHBoxLayout *freqAdjustLayout =new QHBoxLayout();
     freqAdjustLayout->setSpacing(0);
+    QGridLayout *feelingLayout=new QGridLayout();
+    feelingLayout->setContentsMargins(30, 10, 30, 10);
 
     rightLayout->addLayout(baseInfoLayout);
     rightLayout->addLayout(buySellLayout);
+    rightLayout->addLayout(feelingLayout);
     rightLayout->addWidget(newsData);
     rightLayout->addLayout(freqAdjustLayout);
     QButtonGroup *freq=new QButtonGroup(this);
@@ -238,8 +246,10 @@ void MainWindow::initInterface()
 
     initBaseInfoLayout(baseInfoLayout);
     initBuySellLayout(buySellLayout);
+    initFeelingLayout(feelingLayout);
     //2
     periodBox->addItems({"即时", "3日排行", "5日排行", "10日排行", "20日排行"});
+    periodBox->setCurrentIndex(3);
     northBox->addItems({"今日", "3日", "5日", "10日", "月", "季", "年"});
     singleStockBoard->addItems({"近一月", "近三月", "近半年", "近一年"});
     tradedetailBox->addItems({GlobalVar::curRecentWorkDay(1).toString("yyyy-MM-dd"),"近3日", "近5日", "近10日", "近30日"});
@@ -375,37 +385,30 @@ void MainWindow::initBaseInfoLayout(QGridLayout *baseInfoLayout)
     baseInfoLayout->addWidget(stockCode, 0, 0, 2, 1);
     baseInfoLayout->addWidget(stockName, 0, 1, 2, 3);
 
-    QString lName[]={"现价", "涨幅","换手", "成交额", "总股本", "总市值", "市净率", "上涨总数","上涨5/8",
-                       "今开", "最高", "最低", "成交量(手)", "流通股", "", "", "下跌总数","下跌5/8"};
+    QString lName[]={"现价", "涨幅","换手", "成交额", "总股本", "总市值", "市净率", "今开", "最高", "最低", "成交量(手)", "流通股", "", ""};
 
-    for (int i=0;i<18;++i)
+    for (int i=0;i<14;++i)
     {
         QLabel *name=new QLabel(lName[i],this);
         baseInfoData[i]=new QLabel(this);
         name->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(47,79,79)}");
-        if ((i >= 2 and i <= 6) or (i >= 12 and i <= 15))
-            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}");
-        else if (i == 7 or i==8)
+        if (i < 7)
         {
-            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:red}");
-//            name->setMaximumWidth(90);
-        }
-        else if (i == 16 or i==17)
-        {
-            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:green}");
-//            name->setMaximumWidth(90);
-        }
-        else
-            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
-        if (i < 9)
-        {
+            if (i>1)
+                baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}");
+            else
+                baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
             baseInfoLayout->addWidget(name,i+2,0);
             baseInfoLayout->addWidget(baseInfoData[i],i+2,1);
         }
-        else if (i<18)
+        else if (i<14)
         {
-            baseInfoLayout->addWidget(name,i-7,2);
-            baseInfoLayout->addWidget(baseInfoData[i],i-7,3);
+            if (i>9)
+                baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}");
+            else
+                baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
+            baseInfoLayout->addWidget(name,i-5,2);
+            baseInfoLayout->addWidget(baseInfoData[i],i-5,3);
         }
     }
     EPSLabel=new QLabel(this);
@@ -447,7 +450,7 @@ void MainWindow::initBuySellLayout(QGridLayout *BuySellLayout)
     }
     buySellName[0]->setMinimumWidth(40);
     buySellPrice[0]->setMinimumWidth(45);
-    buySellNum[0]->setMinimumWidth(40);
+    buySellNum[0]->setMinimumWidth(50);
     QFrame *line=new QFrame(this);
     line->setStyleSheet("QFrame{/*background:yellow;*/min-height:2px;border-top:2px dotted gray}");
 //    line->setFrameShape(QFrame::HLine);
@@ -456,6 +459,39 @@ void MainWindow::initBuySellLayout(QGridLayout *BuySellLayout)
 
     mTableStock.timeShareTickView->setMinimumWidth(300);
     BuySellLayout->addWidget(mTableStock.timeShareTickView,0,3,11,3);
+}
+void MainWindow::initFeelingLayout(QGridLayout *feelingLayout)
+{
+    QString lName[]={"上涨总数:", "实际涨停:","上涨5/8:", "实时量能:", "下跌总数:", "实际跌停:", "下跌5/8:", "预测量能:"};
+    QLabel *label1=new QLabel("市场情绪:");
+    label1->setStyleSheet("QLabel{font:bold 26px;font-family:微软雅黑;}");
+    dateEdit1->setCalendarPopup(true);
+    QDate t_=QDate::currentDate();
+    dateEdit1->setDate(t_);
+    dateEdit1->setMaximumDate(t_);
+    dateEdit1->setFocusPolicy(Qt::NoFocus);
+    feelingLayout->addWidget(label1,0,0,2,2);
+    feelingLayout->addWidget(dateEdit1,0,3,2,2);
+
+    for (int i=0;i<8;++i)
+    {
+        QLabel *name=new QLabel(lName[i],this);
+        name->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(47,79,79)}");
+        feelingData[i]=new QLabel(this);
+        feelingData[i]->setAlignment(Qt::AlignCenter);
+        if (i < 4)
+        {
+            feelingLayout->addWidget(name,i+2,0);
+            feelingLayout->addWidget(feelingData[i],i+2,1,1,2);
+            feelingData[i]->setStyleSheet("QLabel{font:bold 20px;color:red}");
+        }
+        else
+        {
+            feelingLayout->addWidget(name,i-2,3);
+            feelingLayout->addWidget(feelingData[i],i-2,4,1,2);
+            feelingData[i]->setStyleSheet("QLabel{font:bold 20px;color:green}");
+        }
+    }
 }
 void MainWindow::initSignals()
 {
@@ -727,6 +763,8 @@ void MainWindow::initSignals()
         GlobalVar::curBoard=f10View.model->item(index.row(),3)->text();
         GlobalVar::isBoard=true;
         searchStock.getBoardData();
+        if (GlobalVar::mTableList.isEmpty())
+            return;
         mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
         mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
         mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
@@ -842,6 +880,9 @@ void MainWindow::initSignals()
         else
             QMessageBox::information(this,"提示", "交易已经启动", QMessageBox::Ok);
     });
+
+  connect(dateEdit1,SIGNAL(dateChanged(QDate)),this,SLOT(updateFeeling(QDate)));
+ 
 }
 
 
@@ -904,7 +945,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         int para=event1->angleDelta().y();
         int tempStep=mTableStock.stockTableView->verticalScrollBar()->value();
         int curIndex=mTableStock.stockTableView->currentIndex().row();
-        int row=mTableStock.stockTableView->height()/22;
+        int row=mTableStock.stockTableView->height()/22+1;
         if (para<0)
         {
             mTableStock.stockTableView->verticalScrollBar()->setSliderPosition(tempStep+row);
@@ -1930,8 +1971,7 @@ void MainWindow::showSearchResult()
         mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
         emit startThreadTable();
         toInterFace("main");
-        mTableStock.risingSpeedView->show();
-        mTableStock.myStockView->show();
+        middleWindow->show();
     }
     else
     {
@@ -1954,7 +1994,6 @@ void MainWindow::resetKParameter()
 }
 void MainWindow::dealWithFundFlow()
 {
-    periodBox->setCurrentIndex(3);
     int n=periodBox->currentIndex();
     if (n==1 or n==4)
     {
@@ -1995,7 +2034,8 @@ void MainWindow::fastTrade()
     menu->addAction(actS);
     menu->popup(QCursor::pos());
     howPosition=0;
-
+    QStringList proportionNums={"全仓","1/2","1/3","1/5","1/10"};
+    float rate[5]={1.0,2.0,3.0,5.0,10.0};
     connect(actB,&QAction::triggered,this,[=](){
         PyGILState_STATE state=PyGILState_Ensure();
 //        PyObject* pModule = PyImport_ImportModule("qmt");
@@ -2071,7 +2111,6 @@ void MainWindow::fastTrade()
         tradeInfo->addWidget(unit2,4,3);
         QButtonGroup *proportion=new QButtonGroup(fastBuy);
         QRadioButton *proportionName[5];
-        QStringList proportionNums={"全仓","1/2","1/3","1/4","1/5"};
         for (int i=0;i<5;++i)
         {
             proportionName[i]=new QRadioButton(proportionNums[i],fastBuy);
@@ -2080,7 +2119,7 @@ void MainWindow::fastTrade()
             connect(proportionName[i],&QRadioButton::clicked,this,[=]()mutable{
                 int n=floor(cash/price->text().toFloat()/100);
                 howPosition=i;
-                buyNums->setValue(n/(i+1)*100);
+                buyNums->setValue(int(n/rate[i]+0.5)*100);
             });
         }
         proportionName[0]->setChecked(true);
@@ -2194,14 +2233,15 @@ void MainWindow::fastTrade()
         tradeInfo->addWidget(unit2,4,3);
         QButtonGroup *proportion=new QButtonGroup(fastSell);
         QRadioButton *proportionName[5];
-        QStringList proportionNums={"全仓","1/2","1/3","1/4","1/5"};
+
         for (int i=0;i<5;++i)
         {
             proportionName[i]=new QRadioButton(proportionNums[i],fastSell);
             proportion->addButton(proportionName[i]);
             group->addWidget(proportionName[i]);
             connect(proportionName[i],&QRadioButton::clicked,this,[=](){
-                sellNums->setValue(int(maxNums/(i+1)/100)*100);
+                float t=maxNums%100*100;
+                sellNums->setValue(int(maxNums/100/rate[i]+0.5)*100+t);
             });
         }
         proportionName[0]->setChecked(true);
@@ -2259,14 +2299,43 @@ void MainWindow::delMyStock()
     mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
     GlobalVar::settings->setValue("myStock",GlobalVar::mMyStockCode);
 }
+void MainWindow::updateFeeling(QDate date)
+{
+    QString d=date.toString("yyyy-MM-dd");
+    QFile file(GlobalVar::currentPath+"/list/feeling.csv");
+    if (file.open(QFile::ReadOnly))
+    {
+        QTextStream in(&file);
+        QString s = in.readAll();
+        QList l=s.split("\n");
+        for (int i=0;i<l.size();++i)
+        {
+            QList v=l[i].split(",");
+            if (d==v[0])
+            {
+                feelingData[0]->setText(v[2]);
+                feelingData[1]->setText(v[4]);
+                feelingData[2]->setText(v[6]+"/"+v[8]);
+                feelingData[3]->setText(GlobalVar::format_conversion(v[10].toDouble()));
+                feelingData[4]->setText(v[3]);
+                feelingData[5]->setText(v[5]);
+                feelingData[6]->setText(v[7]+"/"+v[9]);
+                file.close();
+                return;
+            }
+        }
+        file.close();
+        if (date!=QDate::currentDate())
+            QMessageBox::information(this,"提示","没有此日期数据",QMessageBox::Ok);
+    }
+}
 void MainWindow::tradingTimeRunThread()
 {
     QDateTime curTime=QDateTime::currentDateTime();
 //    if (not ui->DLAllStockK->isEnabled() and curTime.time().toString("hh:mm")>"15:00")
 //        ui->DLAllStockK->setEnabled(true);
     if (timeCount%2==0 and GlobalVar::WhichInterface==1 and GlobalVar::isZhMarketDay(curTime))
-        if (GlobalVar::curCode.left(1)!="1" and GlobalVar::curCode.left(3)!="399")
-            emit startThreadTimeShareTick(false);
+        emit startThreadTimeShareTick(false);
     if (timeCount%6==1 and GlobalVar::WhichInterface==1)
     {
         if (GlobalVar::isZhMarketDay(curTime))
@@ -2275,8 +2344,7 @@ void MainWindow::tradingTimeRunThread()
             if (GlobalVar::isBoard)
                 searchStock.getBoardData();
             emit startThreadTable();
-            if (GlobalVar::curCode.length()!=5 and GlobalVar::curCode.left(1)!="1" and GlobalVar::curCode.left(3)!="399")
-                emit startThreadTimeShareChart(false);
+            emit startThreadTimeShareChart(false);
         }
         else
             circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
@@ -2293,6 +2361,8 @@ void MainWindow::tradingTimeRunThread()
             {
                 circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
                 emit startThreadTable();
+                emit startThreadTimeShareTick(false);
+                emit startThreadTimeShareChart(false);
             }
             else
                 circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
@@ -2304,6 +2374,7 @@ void MainWindow::tradingTimeRunThread()
                 circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
                 emit startThreadTable();
                 emit startThreadTimeShareTick(false);
+                emit startThreadTimeShareChart(false);
             }
             else
                 circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
@@ -2314,6 +2385,8 @@ void MainWindow::tradingTimeRunThread()
             {
                 circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
                 emit startThreadTable();
+                emit startThreadTimeShareTick(false);
+                emit startThreadTimeShareChart(false);
             }
             else
                 circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
@@ -2336,6 +2409,37 @@ void MainWindow::tradingTimeRunThread()
                 downloadDate=d;
                 emit startThreadTimeShareChart(true);
                 emit startThreadTimeShareTick(true);
+            }
+        }
+        if (d>feelingDate and curTime.time().toString("hh:mm")>"15:00")
+        {
+            QFile file(GlobalVar::currentPath+"/list/feeling.csv");
+            if (file.open(QFile::ReadOnly))
+            {
+                QTextStream in(&file);
+                QString s = in.readAll();
+                int post=s.lastIndexOf("\n",s.length()-3);
+                if (post==-1)
+                    in.seek(0);
+                else
+                    in.seek(post+1);
+                QString oneLine = in.readLine();
+                QString str=oneLine.mid(0,oneLine.indexOf(","));
+                if (str!=d)
+                {
+                    file.close();
+                    if (file.open(QFile::Append))
+                    {
+                        QStringList dataList;
+                        dataList<<d<<"";
+                        for (int i=0;i<4;++i)
+                            dataList<<QString::number(GlobalVar::upNums[i])<<QString::number(GlobalVar::downNums[i]);
+                        dataList<<QString::number(threadIndex->totalAmount,'f',2)<<"";
+                        file.write(dataList.join(",").toLocal8Bit()+"\n");
+                    }
+                    GlobalVar::settings->setValue("feelingTime",d);
+                }
+                file.close();
             }
         }
         timeCount=0;
@@ -2458,9 +2562,9 @@ void MainWindow::reFlashBuySellBaseInfo()
     for (int i=3;i<7;++i)
         baseInfoData[i]->setText(GlobalVar::format_conversion(GlobalVar::baseInfoData[i]));
     float pct=0;
-    for (int i=9;i<12;++i)
+    for (int i=7;i<10;++i)
     {
-        float v=GlobalVar::baseInfoData[i-2];
+        float v=GlobalVar::baseInfoData[i];
         if (GlobalVar::preClose==0 or v==0)
             pct=0;
         else
@@ -2473,11 +2577,11 @@ void MainWindow::reFlashBuySellBaseInfo()
         else
             baseInfoData[i]->setPalette(GlobalVar::pBlack);
     }
-    for (int i=12;i<16;++i)
-        if(i==14)
-            baseInfoData[i]->setText(QString::number(GlobalVar::baseInfoData[i-2],'f',3));
+    for (int i=10;i<14;++i)
+        if(i==12)
+            baseInfoData[i]->setText(QString::number(GlobalVar::baseInfoData[i],'f',3));
         else
-            baseInfoData[i]->setText(GlobalVar::format_conversion(GlobalVar::baseInfoData[i-2]));
+            baseInfoData[i]->setText(GlobalVar::format_conversion(GlobalVar::baseInfoData[i]));
     stockCode->setText(GlobalVar::curCode);
     stockName->setText(GlobalVar::curName);
     EPSLabel->setText(GlobalVar::EPSReportDate);

@@ -64,6 +64,7 @@ private slots:
     void dealWithFundFlow();
     void fastTrade();
     void delMyStock();
+    void updateFeeling(QDate date);
     void min15Kline();
     void min60Kline();
     void quarterKline();
@@ -103,6 +104,7 @@ private:
     QLabel *baseInfoData[18];
     QLabel *buySellPrice[10];
     QLabel *buySellNum[10];
+    QLabel *feelingData[8];
     QLabel *stockCode;
     QLabel *stockName;
     QTextBrowser *newsData;
@@ -117,6 +119,7 @@ private:
 
     int timeCount=-3;
     QString downloadDate;
+    QString feelingDate;
     bool changeInTurn=true;
     bool isAsia=true;
     bool isTraversalMyStock=false;
@@ -132,6 +135,7 @@ private:
     QLabel *fTitle=new QLabel("标题栏",this);
     QComboBox *periodBox=new QComboBox(this);
     QDateEdit *dateEdit=new QDateEdit(this);
+    QDateEdit *dateEdit1=new QDateEdit(this);
     QComboBox *northBox=new QComboBox(this);
     QComboBox *tradedetailBox=new QComboBox(this);
     QComboBox *singleStockBoard=new QComboBox(this);
@@ -146,6 +150,7 @@ private:
     void initSettings();
     void initBaseInfoLayout(QGridLayout *baseInfoLayout);
     void initBuySellLayout(QGridLayout *BuySellLayout);
+    void initFeelingLayout(QGridLayout *feelingLayout);
     void initSignals();
     void saveCode();
     void flashOldCandleInfo(QMouseEvent *mouseEvent);
