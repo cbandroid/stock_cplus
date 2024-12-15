@@ -13,7 +13,6 @@
 #include "stockinfo.h"
 
 class CTechnique;
-class CLCore;
 class CKData;
 class GlobalVar;
 
@@ -55,7 +54,7 @@ public:
 
     void drawTimeShareChart(QList<timeShareChartInfo>*pTimeShareChartList,QPainter *painter);
     void drawHisTimeShare(QList<timeShareChartInfo> *pHisTimeShareChartList,QPainter *painter);
-    void drawCandleChart(QString freq,ushort nTech,bool bNewCalc,CKData *pKline,CLCore *pCLCore, QPainter *painter);
+    void drawCandleChart(QString freq,ushort nTech,bool bNewCalc,CKData *pKline, QPainter *painter);
     float YTransferCandleChart(float y);
     float YTransferCandleChart(int y);
     float YTransferHisTimeChart(float y);

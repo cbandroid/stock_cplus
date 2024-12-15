@@ -201,7 +201,6 @@ protected:
      QList<timeShareChartInfo> *m_pHisTimeShareChartList;
 
     CKData *m_pKline;
-    CLCore *m_pCLCore;
 
     QTableView *SelectedtableView;
     QDateTime dldlastTime;

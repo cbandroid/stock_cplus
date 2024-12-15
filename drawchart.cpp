@@ -623,7 +623,7 @@ float DrawChart::YTransferCandleChart(float y)
 
 #define  BLANK_EDGE  30.0f
 
-void DrawChart::drawCandleChart(QString freq, ushort nTech, bool bNewCalc, CKData *pKline,CLCore *pCLCore, QPainter* painter)
+void DrawChart::drawCandleChart(QString freq, ushort nTech, bool bNewCalc, CKData *pKline,QPainter* painter)
 {    
    // qDebug()<<total<<","<<m_pGlobalVar->KRange<<","<<m_pGlobalVar->offsetLocal<<",begin "<<begin<<", end "<<end;
     //    qDebug()<<total<<m_pGlobalVar->KBegin<<end;

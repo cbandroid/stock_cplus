@@ -4,13 +4,12 @@
 #include <QFile>
 #include "tech/KData.h"
 
-ThreadCandleChart::ThreadCandleChart(GlobalVar *pGlobalVar,CKData *&pKline, CLCore *&pCLCore,QObject *parent)
+ThreadCandleChart::ThreadCandleChart(GlobalVar *pGlobalVar,CKData *&pKline, QObject *parent)
     : QObject{parent}
 {
     m_pGlobalVar =pGlobalVar;
     pNetManager = nullptr;
 
-    m_pCLCore = pCLCore;
     m_pKline=pKline;
     bReq=false;
     Oldfreq="";

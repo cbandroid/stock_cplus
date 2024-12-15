@@ -287,7 +287,7 @@ void MainWindow::initThread()
     thread[4]->start();
     emit startThreadTimeShareChart(false);
 
-    threadCandleChart=new ThreadCandleChart(m_pGlobalVar,m_pKline,m_pCLCore);
+    threadCandleChart=new ThreadCandleChart(m_pGlobalVar,m_pKline);
     threadCandleChart->moveToThread(thread[5]);
     connect(threadCandleChart,&ThreadCandleChart::getCandleChartFinished,this,[=](){
         bNewCalc=true;
@@ -1903,7 +1903,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         else if (event->type()==QEvent::Paint)
         {
             QPainter painter(pDrawChart->candleChart);
-            pDrawChart->drawCandleChart(freq,nTech,bNewCalc,m_pKline,m_pCLCore,&painter);
+            pDrawChart->drawCandleChart(freq,nTech,bNewCalc,m_pKline,&painter);
             bNewCalc= false;
             return true; // fixed 2024.10.7
         }
