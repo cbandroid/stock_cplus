@@ -1,15 +1,16 @@
 
 #ifndef THREADTIMESHARETICK_H
 #define THREADTIMESHARETICK_H
-
+#include <QNetworkReply>
 #include <QFile>
 #include <QTextCodec>
-
+#include "stockinfo.h"
+class GlobalVar;
 class ThreadTimeShareTick : public QObject
 {
     Q_OBJECT
 public:
-    explicit ThreadTimeShareTick(QObject *parent = nullptr);
+    explicit ThreadTimeShareTick(GlobalVar *pGlobalVar, QList<timeShareTickInfo> *&pTimeShareTickList,QObject *parent = nullptr);
     void getBuySellTimeShareTick(bool reset);
     void getSSEData(int nums,QString url);
 
@@ -28,9 +29,14 @@ private:
     QString nums[10]={"f32","f34","f36","f38","f40","f20","f18","f16","f14","f12"};
     QString baseInfo[14]={"f43","f170","f168","f48","f84","f116","f167","f46","f44","f45","f47","f85","f55","f162"};
 
+    QList<timeShareTickInfo> *m_pTimeShareTickList;
+
 signals:
     void getTimeShareTickFinished();
     void getBuySellFinished();
+protected:
+    GlobalVar *m_pGlobalVar;
+
 };
 
 #endif // THREADTIMESHARETICK_H

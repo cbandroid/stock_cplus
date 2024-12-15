@@ -1,21 +1,37 @@
+#include <QRandomGenerator>
+#include "utilityex.h"
 #include "globalvar.h"
 #include "downloadtask.h"
 #include "requeststocsv.h"
+#include "NetworkManager.h"
 
+QDialog* RequestsToCsv::promptDlg= nullptr;
+QTimer *RequestsToCsv::qTimer=nullptr;
 
-RequestsToCsv::RequestsToCsv(QDialog *parent)
+RequestsToCsv::RequestsToCsv(GlobalVar *pGlobalVar,QList<StockInfo> *&pTableList,QDialog *parent)
     : QDialog{parent}
 {
+
+    m_pGlobalVar=pGlobalVar;
+    m_pTableListCopy=pTableList;
+    downloadedNums=0;
+    isDownload=false;
+
+    progressBarWindowDlg = new QDialog();
+    stopBtn = new QPushButton("终止下载",progressBarWindowDlg);
+    lblnumLine = new QLabel(progressBarWindowDlg);
+    progressBar = new QProgressBar(progressBarWindowDlg);
+
 //    naManager = new QNetworkAccessManager(this);
-    progressBarWindow->setWindowFlags(progressBarWindow->windowFlags() | Qt::WindowStaysOnTopHint);
-    // progressBarWindow->setAttribute(Qt::WA_DeleteOnClose);
-    progressBarWindow->setWindowTitle("下载所有股票k线数据");
-    progressBarWindow->setGeometry(850, 400, 300, 150);
-    QLabel *stockNums = new QLabel("剩余股票数量:",progressBarWindow);
-    QGridLayout *mainLayout = new QGridLayout(progressBarWindow);
-    progressBarWindow->setLayout(mainLayout);
+    progressBarWindowDlg->setWindowFlags(progressBarWindowDlg->windowFlags() | Qt::WindowStaysOnTopHint);
+    // progressBarWindowDlg->setAttribute(Qt::WA_DeleteOnClose);
+    progressBarWindowDlg->setWindowTitle("下载所有股票k线数据");
+    progressBarWindowDlg->setGeometry(850, 400, 300, 150);
+    QLabel *stockNums = new QLabel("剩余股票数量:",progressBarWindowDlg);
+    QGridLayout *mainLayout = new QGridLayout(progressBarWindowDlg);
+    progressBarWindowDlg->setLayout(mainLayout);
     mainLayout->addWidget(stockNums, 0, 1);
-    mainLayout->addWidget(numLine, 0, 3);
+    mainLayout->addWidget(lblnumLine, 0, 3);
     mainLayout->addWidget(progressBar, 1, 0, 1, 5);
     mainLayout->addWidget(stopBtn, 2, 3);
     threadPool.setMaxThreadCount(QThread::idealThreadCount());
@@ -28,43 +44,57 @@ RequestsToCsv::RequestsToCsv(QDialog *parent)
         else
         {
             stopBtn->setText("停止下载");
-            for(int i=downloadedNums;i<GlobalVar::mTableListCopy.count();++i)
+            int nCount =pTableList->count();
+            for(int i=downloadedNums;i<nCount;++i)
             {
-                DownloadTask *workTask=new DownloadTask(this);
+                DownloadTask *workTask=new DownloadTask(pGlobalVar,pTableList,this);
                 workTask->nums=i;
                 threadPool.start(workTask);
             }
         }
 
     });
-    connect(progressBarWindow,&QDialog::finished,this,[=](){
+    connect(progressBarWindowDlg,&QDialog::finished,this,[=](){
         threadPool.clear();
         isDownload=false;
     });
 }
 
+RequestsToCsv::~RequestsToCsv()
+{
+    delete stopBtn ;
+    delete lblnumLine;
+    delete progressBar ;
+    delete progressBarWindowDlg;
+}
+
+
 bool RequestsToCsv::getIndexList()
 {
 //    QDateTime start=QDateTime::currentDateTime();
     QByteArray allData;
-    GlobalVar::getData(allData,3,QUrl("https://www.joinquant.com/data/dict/indexData"));
+    //m_pGlobalVar->getData(allData,3,QUrl(
+    QString qUrl ="https://www.joinquant.com/data/dict/indexData";
+    NetworkManager networkManager;
+    allData= networkManager.getSync< QByteArray >(QUrl(qUrl));
     if (allData.isEmpty())
         return false;
     QString html=QString(allData);
-    QString tbody=GlobalVar::peelStr(html,"<tbody","-1");
+    QString tbody=m_pGlobalVar->peelStr(html,"<tbody","-1");
     QPair<QString, QString> pair;
     QString temp;
     QList<QStringList> indexList;
+    QStringList dataList;
     while (1)
     {
         if (tbody.indexOf("<td")==-1)
             break;
-        QStringList dataList;
+        dataList.clear();
         for (int i=0;i<5;++i)
         {
-            pair=GlobalVar::cutStr(tbody,"<td","</td>");
+            pair=m_pGlobalVar->cutStr(tbody,"<td","</td>");
 
-            QString content=GlobalVar::getContent(pair.first);
+            QString content=m_pGlobalVar->getContent(pair.first);
 //            qDebug()<<content;
             switch(i)
             {
@@ -82,25 +112,26 @@ bool RequestsToCsv::getIndexList()
         indexList.append(dataList);
     }
 
-    QFile file(GlobalVar::currentPath+"/list/abbreviation_index_list.csv");
+    QFile file(m_pGlobalVar->currentPath+"/list/abbreviation_index_list.csv");
     if (file.open(QFile::WriteOnly))
     {
-        for (int i=0;i<indexList.count();++i)
+        int nCount=indexList.count();
+        QStringList dataList;
+        for (int i=0;i<nCount;++i)
         {
-            QStringList dataList;
+            dataList.clear();
             for (int j=0;j<5;++j)
             {
                 dataList<<indexList.at(i)[j];
             }
             file.write(dataList.join(",").toLocal8Bit()+"\n");
         }
-        QStringList dataList;
+        dataList.clear();
         dataList<<"899050"<<"北证50"<<""<<""<<"BZ50";
         file.write(dataList.join(",").toLocal8Bit()+"\n");
     }
     file.close();
     return true;
-    //    qDebug()<<start.msecsTo(QDateTime::currentDateTime());
 }
 
 bool RequestsToCsv::getPlateList()
@@ -109,21 +140,24 @@ bool RequestsToCsv::getPlateList()
     QString url[]={"http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=40&po=0&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&wbp2u=|0|0|0|web&fid=f3&fs=m:90+t:1+f:!50&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105,f140,f141,f207,f208,f209,f222&_=1665566741514",
                      "http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=600&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&wbp2u=7111416627128474|0|1|0|web&fid=f3&fs=m:90+t:3+f:!50&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105,f140,f141,f207,f208,f209,f222&_=1682126899835",
                      "http://1.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&wbp2u=7111416627128474|0|1|0|web&fid=f3&fs=m:90+t:2+f:!50&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152,f124,f107,f104,f105,f140,f141,f207,f208,f209,f222&_=1682127442774"};
+    NetworkManager networkManager;
+    QByteArray allData;
     for (int i=0;i<3;++i)
     {
-        QByteArray allData;
-        GlobalVar::getData(allData,2,QUrl(url[i]));
+        allData= networkManager.getSync< QByteArray >(QUrl(url[i]));
         if (allData.isEmpty())
-            return false;
+            continue;
         dealWithPlateList(plateList,allData);
     }
     std::sort(plateList.begin(),plateList.end(),[](QStringList a,QStringList b){
         return a[2]<b[2];
     });
-    QFile file(GlobalVar::currentPath+"/list/concept_industry_board.csv");
-    if (file.open(QFile::WriteOnly))
-        for (int i=0;i<plateList.count();++i)
+    QFile file(m_pGlobalVar->currentPath+"/list/concept_industry_board.csv");
+    if (file.open(QFile::WriteOnly)){
+         int nCount=plateList.count();
+        for (int i=0;i<nCount;++i)
             file.write(plateList.at(i)[0].toLocal8Bit()+","+plateList.at(i)[1].toLocal8Bit()+","+plateList.at(i)[2].toLocal8Bit()+"\n");
+    }
     file.close();
     return true;
 }
@@ -137,32 +171,101 @@ void RequestsToCsv::dealWithPlateList(QList<QStringList> &list,const QByteArray 
     {
         QJsonObject jsonObject = doc.object();
         QJsonArray data=jsonObject.value("data").toObject().value("diff").toArray();
-        for (int i = 0; i < data.size(); ++i)
+        int nSize=data.size();
+        QJsonValue value;
+        QVariantMap ceilMap;
+         QStringList temp;
+        for (int i = 0; i < nSize; ++i)
         {
-            QJsonValue value = data.at(i);
-            QVariantMap ceilMap = value.toVariant().toMap();
-            QStringList temp;
+            value = data.at(i);
+            ceilMap = value.toVariant().toMap();
             temp<<ceilMap.value("f12").toString()<<ceilMap.value("f14").toString()<<CNToEL(ceilMap.value("f14").toString());
             list.append(temp);
+            temp.clear();
         }
     }
 }
 
+/*
+ *   # 通过抓包工具Fiddler分析请求头信息得到的起始url,page=1
+    start_urls = ['http://quote.eastmoney.com/centerv2/hsgg/xg']
+
+    def parse(self, response):
+        # 获取第一页response
+        response = requests.get('http://nufm.dfcfw.com/EM_Finance2014NumericApplication/JS.aspx?type=CT&cmd=C.BK05011&sty=FCOIATA&sortType=(ChangePercent)&sortRule=1&page=1&pageSize=20&js=var%20dfFHBxOP={rank:[(x)],pages:(pc),total:(tot)}&token=7bc05d0d4c3c22ef9fca8c2a912d779c&jsName=quote_123&_g=0.628606915911589&_=1523274953883')
+        # 正则匹配得到所有页数
+        total = re.findall('total:(.*?)}',response.text)[0]
+        page = int(total)//20 + 1
+        # 循环遍历各页
+        for i in range(1,page+1):
+            # 拼接所有页的url,总计新股17页
+            url = 'http://nufm.dfcfw.com/EM_Finance2014NumericApplication/JS.aspx?type=CT&cmd=C.BK05011&sty=FCOIATA&sortType=(ChangePercent)&sortRule=1&page='+str(i)+'&pageSize=20&js=var%20dfFHBxOP={rank:[(x)],pages:(pc),total:(tot)}&token=7bc05d0d4c3c22ef9fca8c2a912d779c&jsName=quote_123&_g=0.628606915911589&_=1523274953883'
+            # 生成request对象,回调函数传给函数parse_num
+            request = Request(url, callback=self.parse_num)
+            # request传递给框架的downloader处理,生成response给下一个函数
+            yield request
+
+    def parse_num(self, response):
+        # 取得response中的text文本
+        text = response.text
+        # 利用爆炸和替换取得股票列表
+        stock_list = eval(text.split('=')[1].split(':')[1].replace(',pages',''))
+        # 遍历取得股票列表中个股所需信息
+        for stock in stock_list:
+            stock_msg_list = stock.split(',')
+            # 股票代码
+            stock_num = stock_msg_list[1]
+            # 股票名称
+            stock_name = stock_msg_list[2]
+            # 股票最新价
+            stock_price = stock_msg_list[3]
+            # 股票涨跌幅
+            stock_change_range = stock_msg_list[5].replace('%','')
+            # 股票涨跌额
+            stock_change_price = stock_msg_list[4]
+            # 将股票代码'30'开头的创业板股票剔除
+            if not stock_num.startswith('30'):
+f2：最新价
+f3：涨跌幅
+f4：涨跌额
+f5：成交量（手）
+f6：成交额
+f7：振幅
+f8：换手率
+f9：市盈率
+f10：量比
+f12：股票代码
+f14：股票名称
+f15：最高
+f16：最低
+f17：今开
+f18：昨收
+f22：市净率
+ */
 QString RequestsToCsv::getStockList()
 {
     QJsonObject json;
     json.insert("api_name", "stock_basic");
-    json.insert("token", GlobalVar::settings->value("token").toString());
+    json.insert("token", m_pGlobalVar->settings->value("token").toString());
     json.insert("fields", "ts_code,symbol,name,area,industry,list_date,cnspell");
 
     QJsonDocument doc;
     doc.setObject(json);
     QByteArray dataArray = doc.toJson(QJsonDocument::Compact);
     QByteArray allData;
-    GlobalVar::postData(dataArray,allData,2,QUrl("http://api.waditu.com"));
+
+    //挖地鼠API接口
+    QString qUrl ="http://api.waditu.com";
+
+    NetworkManager networkManager;
+
+    networkManager.TryPostExSync(qUrl,dataArray,allData);
+
     QJsonParseError jsonError;
     doc = QJsonDocument::fromJson(allData, &jsonError);
-    // qDebug()<<QString(allData);
+
+  //  qDebug()<<"getStockList " <<QString(allData);
+
     if (allData.size()<800)
     {
         if (jsonError.error == QJsonParseError::NoError)
@@ -174,20 +277,23 @@ QString RequestsToCsv::getStockList()
         else
             return "股票处理失败";
     }
-    QFile file(GlobalVar::currentPath+"/list/stock_list.csv");
+    QFile file(m_pGlobalVar->currentPath+"/list/stock_list.csv");
     if (file.open(QFile::WriteOnly))
     {
         if (jsonError.error == QJsonParseError::NoError)
         {
             QJsonObject jsonObject = doc.object();
             QJsonArray data=jsonObject.value("data").toObject().value("items").toArray();
-            for (int i = 0; i < data.size(); ++i)
+            int nSize=data.size();
+            QStringList dataList;
+            for (int i = 0; i < nSize; ++i)
             {
-                QStringList dataList;
+
                 dataList<<data.at(i)[0].toString()<<data.at(i)[1].toString()<<data.at(i)[2].toString()<<
                     data.at(i)[3].toString()<<data.at(i)[4].toString()<<data.at(i)[5].toString().toUpper()<<data.at(i)[6].toString();
                 file.write(dataList.join(",").toLocal8Bit()+"\n");
 //                file.write(data.at(i).toString().toLocal8Bit()+"\n");
+                dataList.clear();
             }
         }
     }
@@ -195,134 +301,308 @@ QString RequestsToCsv::getStockList()
     return "股票处理成功";
 }
 
-void RequestsToCsv::dealWithAllList()
+
+void RequestsToCsv::getEastStockList()
+{
+     QByteArray resData;
+    int randomNumber = QRandomGenerator::global()->bounded(99) + 1;
+    time_t tm = QDateTime::currentDateTime().toMSecsSinceEpoch();
+    QString qStrMSecs=QString::number(tm);
+    QString qUrl="http://"+QString::number(randomNumber)+".push2.eastmoney.com/api/qt/clist/get?cb=jQuery1124025377978787991706_1731053611353&pn=1&pz=20&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&dect=1&wbp2u=|0|0|0|web&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152&_="+qStrMSecs;
+    NetworkManager networkManager;
+    resData= networkManager.getSync<QByteArray>(QUrl(qUrl));
+
+    QString result =  QString(resData);
+
+    QStringList list= result.split("jQuery1124025377978787991706_1731053611353");
+    result = list[1].split("(")[1].split(");")[0];
+
+    QJsonParseError jsonError;
+    QJsonDocument doc = QJsonDocument::fromJson(result.toUtf8(), &jsonError);
+
+    if (jsonError.error == QJsonParseError::NoError)
+    {
+        QJsonObject jsonObject = doc.object();
+        QJsonArray data=jsonObject.value("data").toObject().value("diff").toArray();
+        int nTotal =  jsonObject.value("data").toObject().value("total").toInt();
+
+        QJsonValue value;
+        QVariantMap ceilMap;
+        int nSize = data.size();
+        for (int i = 0; i < nSize; ++i)
+        {
+            value = data.at(i);
+            ceilMap = value.toVariant().toMap();
+            qDebug() << ceilMap.value("f12").toString()<<","<<ceilMap.value("f14").toString()<<CNToEL(ceilMap.value("f14").toString());
+        }
+
+        int left = nTotal-20;
+        int  Pages=  left/20;
+        int n;
+        QString strMarket,strSymbol;
+        int nMarket;
+        for (n=2;n<Pages;n++)
+        {
+            qUrl="http://"+QString::number(randomNumber)+".push2.eastmoney.com/api/qt/clist/get?cb=jQuery1124025377978787991706_1731053611353&pn="+QString::number(n)+"&pz="+ QString::number(20)+"&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&dect=1&wbp2u=|0|0|0|web&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152&_="+qStrMSecs;
+            resData= networkManager.getSync<  QByteArray >(QUrl(qUrl));
+            result =  QString(resData);
+            list= result.split("jQuery1124025377978787991706_1731053611353");
+            result = list[1].split("(")[1].split(");")[0];
+            doc = QJsonDocument::fromJson(result.toUtf8(), &jsonError);
+
+            if (jsonError.error == QJsonParseError::NoError)
+            {
+                jsonObject = doc.object();
+                data=jsonObject.value("data").toObject().value("diff").toArray();
+
+                nSize = data.size();
+                for (int i = 0; i < nSize; ++i)
+                {
+                   //  qDebug() << data.at(i).toString();
+                    value = data.at(i);
+                    ceilMap = value.toVariant().toMap();
+                    nMarket=ceilMap.value("f13").toInt();
+                    if ( nMarket==1)
+                      strMarket=".SH";
+                    else
+                      strMarket=".SZ";
+                    strSymbol=ceilMap.value("f12").toString()+ strMarket;
+                    qDebug() <<strSymbol+ strMarket<<","<<strSymbol<< ","<<ceilMap.value("f14").toString()<<","<<CNToEL(ceilMap.value("f14").toString());
+                }
+            }
+        }
+
+        int lastPage =  left -Pages*20;
+        if (lastPage>0)
+        {         
+            qUrl="http://"+QString::number(randomNumber)+".push2.eastmoney.com/api/qt/clist/get?cb=jQuery1124025377978787991706_1731053611353&pn="+QString::number(lastPage)+"&pz="+ QString::number(20)+"&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&dect=1&wbp2u=|0|0|0|web&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048&fields=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152&_="+qStrMSecs;
+            resData= networkManager.getSync<  QByteArray >(QUrl(qUrl));
+            result =  QString(resData);
+            list= result.split("jQuery1124025377978787991706_1731053611353");
+            result = list[1].split("(")[1].split(");")[0];
+
+            doc = QJsonDocument::fromJson(result.toUtf8(), &jsonError);
+
+            if (jsonError.error == QJsonParseError::NoError)
+            {
+                jsonObject = doc.object();
+                data=jsonObject.value("data").toObject().value("diff").toArray();
+
+                nSize = data.size();
+                for (int i = 0; i < nSize; ++i)
+                {
+                    value = data.at(i);
+                    ceilMap = value.toVariant().toMap();
+                    qDebug() << ceilMap.value("f12").toString()<<","<<ceilMap.value("f14").toString()<<CNToEL(ceilMap.value("f14").toString());
+                }
+            }
+
+        }
+    }
+}
+
+bool RequestsToCsv::dealWithAllList()
 {
 //    QDateTime start=QDateTime::currentDateTime();
-
+    bool bResult=true;
     QList<QStringList> allDataList;
-    QFile saveFile(GlobalVar::currentPath+"/list/abbreviation_list.csv");
+    QFile saveFile(m_pGlobalVar->currentPath+"/list/abbreviation_list.csv");
     if (saveFile.open(QFile::WriteOnly))
     {
-        QFile file(GlobalVar::currentPath+"/list/abbreviation_index_list.csv");
+        QFile file(m_pGlobalVar->currentPath+"/list/abbreviation_index_list.csv");
         if (file.open(QFile::ReadOnly))
         {
             QTextCodec *codec = QTextCodec::codecForName("GBK");
 
             //        QStringList Data = read.readAll().split("\n",Qt::SkipEmptyParts);
             QStringList Data=codec->toUnicode(file.readAll()).split("\n",Qt::SkipEmptyParts);
-
+            QStringList temp;
+            QStringList strLine;
             for(int i=0;i<Data.count();++i)
-            {
-                QStringList temp;
-                QStringList strLine = Data.at(i).split(",");
+            {              
+                strLine = Data.at(i).split(",");
                 allDataList.append(temp<<strLine[0]<<strLine[1]<<strLine[4]);
+                temp.clear();
             }
         }
         file.close();
-        QFile file1(GlobalVar::currentPath+"/list/stock_list.csv");
+        QFile file1(m_pGlobalVar->currentPath+"/list/stock_list.csv");
         if (file1.open(QFile::ReadOnly))
         {
             QTextCodec *codec = QTextCodec::codecForName("GBK");
 
             //        QStringList Data = read.readAll().split("\n",Qt::SkipEmptyParts);
             QStringList Data=codec->toUnicode(file1.readAll()).split("\n",Qt::SkipEmptyParts);
-
+            QStringList temp;
+            QStringList strLine;
             for(int i=0;i<Data.count();++i)
-            {
-                QStringList temp;
-                QStringList strLine = Data.at(i).split(",");
+            {                
+                strLine = Data.at(i).split(",");
                 allDataList.append(temp<<strLine[1]<<strLine[2]<<strLine[5]);
+                temp.clear();
             }
         }
         file1.close();
-        QFile file2(GlobalVar::currentPath+"/list/concept_industry_board.csv");
+        QFile file2(m_pGlobalVar->currentPath+"/list/concept_industry_board.csv");
         if (file2.open(QFile::ReadOnly))
         {
             QTextCodec *codec = QTextCodec::codecForName("GBK");
 
             //        QStringList Data = read.readAll().split("\n",Qt::SkipEmptyParts);
             QStringList Data=codec->toUnicode(file2.readAll()).split("\n",Qt::SkipEmptyParts);
-
+            QStringList temp;
+            QStringList strLine;
             for(int i=0;i<Data.count();++i)
-            {
-                QStringList temp;
-                QStringList strLine = Data.at(i).split(",");
+            {              
+                strLine = Data.at(i).split(",");
                 allDataList.append(temp<<strLine[0]<<strLine[1]<<strLine[2]);
+                temp.clear();
             }
         }
         file2.close();
         std::sort(allDataList.begin(),allDataList.end(),[](QStringList a,QStringList b){
             return a[2]<b[2];
         });
-        for (int i=0;i<allDataList.count();++i)
+        int nCount=allDataList.count();
+        for (int i=0;i<nCount;++i)
         {
             saveFile.write(allDataList.at(i).join(",").toLocal8Bit()+"\n");
         }
     }
+    else
+        bResult= false;
     saveFile.close();
 
-    QFile saveDigitFile(GlobalVar::currentPath+"/list/digit_list.csv");
+    QFile saveDigitFile(m_pGlobalVar->currentPath+"/list/digit_list.csv");
     if (saveDigitFile.open(QFile::WriteOnly))
     {
         std::sort(allDataList.begin(),allDataList.end(),[](QStringList a,QStringList b){
             return a[0]<b[0];
         });
-        for (int i=0;i<allDataList.count();++i)
+        int nCount=allDataList.count();
+        for (int i=0;i<nCount;++i)
         {
             saveDigitFile.write(allDataList.at(i).join(",").toLocal8Bit()+"\n");
         }
     }
+    else
+        bResult= false;
     saveDigitFile.close();
     //    qDebug()<<start.msecsTo(QDateTime::currentDateTime());
+    return bResult;
 }
 
-void RequestsToCsv::downStockIndexPlateInfo()
+void RequestsToCsv::OnAccept()
 {
-    QDialog *promptWindow=new QDialog(this);
-    promptWindow->setWindowFlags(promptWindow->windowFlags() | Qt::WindowStaysOnTopHint);
-    promptWindow->setWindowTitle("下载指数板块个股信息");
-    QTextEdit *promptText=new QTextEdit(promptWindow);
-    promptText->setStyleSheet("background-color: rgb(211, 211, 211);");
-//    promptWindow->setWindowFlag(Qt::Popup);
-    promptWindow->setGeometry(850, 400, 300, 150);
-    QVBoxLayout *Vlay=new QVBoxLayout(promptWindow);
-    promptWindow->setLayout(Vlay);
-    Vlay->addWidget(promptText);
-    promptWindow->show();
-    promptText->append("开始下载指数、板块、个股信息...请稍等");
-    if (getIndexList())
-        promptText->append("指数处理成功");
-    else
-        if (getIndexList())
-            promptText->append("指数处理成功");
-        else
-            promptText->append("指数处理失败");
-    if (getPlateList())
-        promptText->append("板块处理成功");
-    else
-        if (getPlateList())
-            promptText->append("板块处理成功");
-        else
-            promptText->append("板块处理失败");
-    promptText->append(getStockList());
-    dealWithAllList();
+    qTimer->stop();
+    delete qTimer;
+    promptDlg->accept();
+    delete  promptDlg;
 }
 
-void isDirExist(QString fullPath)
+bool RequestsToCsv::downStockIndexPlateInfo()
+{
+    promptDlg=new QDialog(this);
+    promptDlg->setWindowFlags(promptDlg->windowFlags() | Qt::WindowStaysOnTopHint);
+    promptDlg->setWindowTitle("下载指数板块个股信息");
+    QTextEdit *promptText=new QTextEdit(promptDlg);
+    promptText->setStyleSheet("background-color: rgb(211, 211, 211);");
+//    promptDlg->setWindowFlag(Qt::Popup);
+    promptDlg->setGeometry(850, 400, 300, 150);
+    QVBoxLayout *Vlay=new QVBoxLayout(promptDlg);
+    promptDlg->setLayout(Vlay);
+    Vlay->addWidget(promptText);
+    promptDlg->show();
+    promptText->append("开始下载指数、板块、个股信息...请稍等");
+
+    qTimer = new QTimer(promptDlg);
+    connect(qTimer, &QTimer::timeout, this, &RequestsToCsv::OnAccept);
+    connect(promptDlg, & QDialog::rejected, this, &RequestsToCsv::OnAccept);
+
+    QString qStrDate =m_pGlobalVar->settings->value("isIndexDone").toString();
+    //QDateTime curTime=QDateTime::currentDateTime();
+    //curTime=m_pGlobalVar->GetLatestTradeTime(curTime);
+    QDateTime curTime=m_pGlobalVar->curWorkDay();
+    curDate=curTime.toString("yyyy-MM-dd");
+    bool bDone=false;
+    if (qStrDate !=curDate)
+    {
+     if (getIndexList()){
+        promptText->append("指数处理成功");
+        bDone=true;
+        m_pGlobalVar->settings->setValue("isIndexDone",curDate);
+     }
+     else{
+        if (getIndexList()){
+            promptText->append("指数处理成功");
+             bDone=true;
+            m_pGlobalVar->settings->setValue("isIndexDone",curDate);
+        }
+        else{
+            promptText->append("指数处理失败");
+        }
+      }
+    }
+    qStrDate =m_pGlobalVar->settings->value("isPlateDone").toString();
+    if (qStrDate !=curDate)
+    {
+      if (getPlateList()){
+        promptText->append("板块处理成功");
+        bDone=true;
+        m_pGlobalVar->settings->setValue("isPlateDone",curDate);
+      }
+      else
+      {
+        if (getPlateList()){
+            promptText->append("板块处理成功");
+             bDone=true;
+            m_pGlobalVar->settings->setValue("isPlateDone",curDate);
+        }
+        else{
+            promptText->append("板块处理失败");            
+         }
+      }
+    }
+    qStrDate =m_pGlobalVar->settings->value("isSymbolDone").toString();
+    bool bResult = true;
+    if (qStrDate !=curDate)
+    {
+      QString qStr = getStockList();
+
+      promptText->append(qStr);
+
+      if (qStr.contains("成功")){
+           bDone=true;
+        m_pGlobalVar->settings->setValue("isSymbolDone",curDate);
+        bResult=true;
+      }
+      else {
+        bResult= false;
+      }
+    }
+    if ( bDone){
+       dealWithAllList();
+    }
+    qTimer->start(15*1000); // 设置定时器时间为15*1000毫秒
+    return bResult;
+}
+
+void RequestsToCsv::isDirExist(QString fullPath)
 {
     QDir dir(fullPath);
     if(dir.exists())
         return;
-    dir.mkdir(GlobalVar::currentPath+fullPath);
-    dir.mkdir(GlobalVar::currentPath+fullPath+"/sh");
-    dir.mkdir(GlobalVar::currentPath+fullPath+"/bj");
-    dir.mkdir(GlobalVar::currentPath+fullPath+"/sz");
+    dir.mkdir(m_pGlobalVar->currentPath+fullPath);
+    dir.mkdir(m_pGlobalVar->currentPath+fullPath+"/sh");
+    dir.mkdir(m_pGlobalVar->currentPath+fullPath+"/bj");
+    dir.mkdir(m_pGlobalVar->currentPath+fullPath+"/sz");
 }
 
-void RequestsToCsv::downloadAllStockK()
+void RequestsToCsv::downloadAllStockK(QList<StockInfo> *&pTableListCopy)
 {
-    QString s =GlobalVar::settings->value("isDownloadK").toString();
-    QDateTime curTime=GlobalVar::curRecentWorkDay(0);
+    m_pTableListCopy=pTableListCopy;
+    QString s =m_pGlobalVar->settings->value("isDownloadK").toString();
+    QDateTime curTime=m_pGlobalVar->curRecentWorkDay(0);
     curDate=curTime.toString("yyyy-MM-dd");
     if (s==curDate)
     {
@@ -331,21 +611,21 @@ void RequestsToCsv::downloadAllStockK()
     }
     if (isDownload)
     {
-        progressBarWindow->show();
+        progressBarWindowDlg->show();
         return;
     }
     isDownload=true;
     stopBtn->setText("停止下载");
     stopBtn->setEnabled(true);
-    int n=GlobalVar::mTableListCopy.count();
-    numLine->setText(QString::number(n-downloadedNums));
+    int n=pTableListCopy->count();
+    lblnumLine->setText(QString::number(n-downloadedNums));
     progressBar->setRange(0, n);
-    progressBarWindow->show();
+    progressBarWindowDlg->show();
     isDirExist("/list/data");
 
     for(int i=downloadedNums;i<n;++i)
     {
-        DownloadTask *workTask=new DownloadTask(this);
+        DownloadTask *workTask=new DownloadTask(m_pGlobalVar,pTableListCopy,this);
         workTask->nums=i;
         threadPool.start(workTask);
     }
@@ -354,14 +634,14 @@ void RequestsToCsv::downloadAllStockK()
 Q_INVOKABLE void RequestsToCsv::setText()
 {
     downloadedNums+=1;
-    int n=GlobalVar::mTableListCopy.count();
-    numLine->setText(QString::number(n-downloadedNums));
+    int n=m_pTableListCopy->count();
+    lblnumLine->setText(QString::number(n-downloadedNums));
     progressBar->setValue(downloadedNums);
     if (downloadedNums==n)
     {
         stopBtn->setEnabled(false);
         stopBtn->setText("下载完成");
-        GlobalVar::settings->setValue("isDownloadK",curDate);
+        m_pGlobalVar->settings->setValue("isDownloadK",curDate);
     }
 }
 
@@ -401,242 +681,3 @@ Q_INVOKABLE void RequestsToCsv::setText()
 //        qDebug()<<"成功和服务器建立好连接";
 //    });
 //}
-
-QString RequestsToCsv::CNToEL(const QString &cnstr)
-{
-    QStringList listJP;
-    listJP << "YDYQSXMWZSSXJBYMGCCZQPSSQBYCDSCDQLDYLYBSSJGYZZJJFKCCLZDHWDWZJLJPFYYNWJJTMYHZWZHFLZPPQHGSCYYYNJQYXXGJ";
-    listJP << "HHSDSJNKKTMOMLCRXYPSNQSECCQZGGLLYJLMYZZSECYKYYHQWJSSGGYXYZYJWWKDJHYCHMYXJTLXJYQBYXZLDWRDJRWYSRLDZJPC";
-    listJP << "BZJJBRCFTLECZSTZFXXZHTRQHYBDLYCZSSYMMRFMYQZPWWJJYFCRWFDFZQPYDDWYXKYJAWJFFXYPSFTZYHHYZYSWCJYXSCLCXXWZ";
-    listJP << "ZXNBGNNXBXLZSZSBSGPYSYZDHMDZBQBZCWDZZYYTZHBTSYYBZGNTNXQYWQSKBPHHLXGYBFMJEBJHHGQTJCYSXSTKZHLYCKGLYSMZ";
-    listJP << "XYALMELDCCXGZYRJXSDLTYZCQKCNNJWHJTZZCQLJSTSTBNXBTYXCEQXGKWJYFLZQLYHYXSPSFXLMPBYSXXXYDJCZYLLLSJXFHJXP";
-    listJP << "JBTFFYABYXBHZZBJYZLWLCZGGBTSSMDTJZXPTHYQTGLJSCQFZKJZJQNLZWLSLHDZBWJNCJZYZSQQYCQYRZCJJWYBRTWPYFTWEXCS";
-    listJP << "KDZCTBZHYZZYYJXZCFFZZMJYXXSDZZOTTBZLQWFCKSZSXFYRLNYJMBDTHJXSQQCCSBXYYTSYFBXDZTGBCNSLCYZZPSAZYZZSCJCS";
-    listJP << "HZQYDXLBPJLLMQXTYDZXSQJTZPXLCGLQTZWJBHCTSYJSFXYEJJTLBGXSXJMYJQQPFZASYJNTYDJXKJCDJSZCBARTDCLYJQMWNQNC";
-    listJP << "LLLKBYBZZSYHQQLTWLCCXTXLLZNTYLNEWYZYXCZXXGRKRMTCNDNJTSYYSSDQDGHSDBJGHRWRQLYBGLXHLGTGXBQJDZPYJSJYJCTM";
-    listJP << "RNYMGRZJCZGJMZMGXMPRYXKJNYMSGMZJYMKMFXMLDTGFBHCJHKYLPFMDXLQJJSMTQGZSJLQDLDGJYCALCMZCSDJLLNXDJFFFFJCZ";
-    listJP << "FMZFFPFKHKGDPSXKTACJDHHZDDCRRCFQYJKQCCWJDXHWJLYLLZGCFCQDSMLZPBJJPLSBCJGGDCKKDEZSQCCKJGCGKDJTJDLZYCXK";
-    listJP << "LQSCGJCLTFPCQCZGWPJDQYZJJBYJHSJDZWGFSJGZKQCCZLLPSPKJGQJHZZLJPLGJGJJTHJJYJZCZMLZLYQBGJWMLJKXZDZNJQSYZ";
-    listJP << "MLJLLJKYWXMKJLHSKJGBMCLYYMKXJQLBMLLKMDXXKWYXYSLMLPSJQQJQXYXFJTJDXMXXLLCXQBSYJBGWYMBGGBCYXPJYGPEPFGDJ";
-    listJP << "GBHBNSQJYZJKJKHXQFGQZKFHYGKHDKLLSDJQXPQYKYBNQSXQNSZSWHBSXWHXWBZZXDMNSJBSBKBBZKLYLXGWXDRWYQZMYWSJQLCJ";
-    listJP << "XXJXKJEQXSCYETLZHLYYYSDZPAQYZCMTLSHTZCFYZYXYLJSDCJQAGYSLCQLYYYSHMRQQKLDXZSCSSSYDYCJYSFSJBFRSSZQSBXXP";
-    listJP << "XJYSDRCKGJLGDKZJZBDKTCSYQPYHSTCLDJDHMXMCGXYZHJDDTMHLTXZXYLYMOHYJCLTYFBQQXPFBDFHHTKSQHZYYWCNXXCRWHOWG";
-    listJP << "YJLEGWDQCWGFJYCSNTMYTOLBYGWQWESJPWNMLRYDZSZTXYQPZGCWXHNGPYXSHMYQJXZTDPPBFYHZHTJYFDZWKGKZBLDNTSXHQEEG";
-    listJP << "ZZYLZMMZYJZGXZXKHKSTXNXXWYLYAPSTHXDWHZYMPXAGKYDXBHNHXKDPJNMYHYLPMGOCSLNZHKXXLPZZLBMLSFBHHGYGYYGGBHSC";
-    listJP << "YAQTYWLXTZQCEZYDQDQMMHTKLLSZHLSJZWFYHQSWSCWLQAZYNYTLSXTHAZNKZZSZZLAXXZWWCTGQQTDDYZTCCHYQZFLXPSLZYGPZ";
-    listJP << "SZNGLNDQTBDLXGTCTAJDKYWNSYZLJHHZZCWNYYZYWMHYCHHYXHJKZWSXHZYXLYSKQYSPSLYZWMYPPKBYGLKZHTYXAXQSYSHXASMC";
-    listJP << "HKDSCRSWJPWXSGZJLWWSCHSJHSQNHCSEGNDAQTBAALZZMSSTDQJCJKTSCJAXPLGGXHHGXXZCXPDMMHLDGTYBYSJMXHMRCPXXJZCK";
-    listJP << "ZXSHMLQXXTTHXWZFKHCCZDYTCJYXQHLXDHYPJQXYLSYYDZOZJNYXQEZYSQYAYXWYPDGXDDXSPPYZNDLTWRHXYDXZZJHTCXMCZLHP";
-    listJP << "YYYYMHZLLHNXMYLLLMDCPPXHMXDKYCYRDLTXJCHHZZXZLCCLYLNZSHZJZZLNNRLWHYQSNJHXYNTTTKYJPYCHHYEGKCTTWLGQRLGG";
-    listJP << "TGTYGYHPYHYLQYQGCWYQKPYYYTTTTLHYHLLTYTTSPLKYZXGZWGPYDSSZZDQXSKCQNMJJZZBXYQMJRTFFBTKHZKBXLJJKDXJTLBWF";
-    listJP << "ZPPTKQTZTGPDGNTPJYFALQMKGXBDCLZFHZCLLLLADPMXDJHLCCLGYHDZFGYDDGCYYFGYDXKSSEBDHYKDKDKHNAXXYBPBYYHXZQGA";
-    listJP << "FFQYJXDMLJCSQZLLPCHBSXGJYNDYBYQSPZWJLZKSDDTACTBXZDYZYPJZQSJNKKTKNJDJGYYPGTLFYQKASDNTCYHBLWDZHBBYDWJR";
-    listJP << "YGKZYHEYYFJMSDTYFZJJHGCXPLXHLDWXXJKYTCYKSSSMTWCTTQZLPBSZDZWZXGZAGYKTYWXLHLSPBCLLOQMMZSSLCMBJCSZZKYDC";
-    listJP << "ZJGQQDSMCYTZQQLWZQZXSSFPTTFQMDDZDSHDTDWFHTDYZJYQJQKYPBDJYYXTLJHDRQXXXHAYDHRJLKLYTWHLLRLLRCXYLBWSRSZZ";
-    listJP << "SYMKZZHHKYHXKSMDSYDYCJPBZBSQLFCXXXNXKXWYWSDZYQOGGQMMYHCDZTTFJYYBGSTTTYBYKJDHKYXBELHTYPJQNFXFDYKZHQKZ";
-    listJP << "BYJTZBXHFDXKDASWTAWAJLDYJSFHBLDNNTNQJTJNCHXFJSRFWHZFMDRYJYJWZPDJKZYJYMPCYZNYNXFBYTFYFWYGDBNZZZDNYTXZ";
-    listJP << "EMMQBSQEHXFZMBMFLZZSRXYMJGSXWZJSPRYDJSJGXHJJGLJJYNZZJXHGXKYMLPYYYCXYTWQZSWHWLYRJLPXSLSXMFSWWKLCTNXNY";
-    listJP << "NPSJSZHDZEPTXMYYWXYYSYWLXJQZQXZDCLEEELMCPJPCLWBXSQHFWWTFFJTNQJHJQDXHWLBYZNFJLALKYYJLDXHHYCSTYYWNRJYX";
-    listJP << "YWTRMDRQHWQCMFJDYZMHMYYXJWMYZQZXTLMRSPWWCHAQBXYGZYPXYYRRCLMPYMGKSJSZYSRMYJSNXTPLNBAPPYPYLXYYZKYNLDZY";
-    listJP << "JZCZNNLMZHHARQMPGWQTZMXXMLLHGDZXYHXKYXYCJMFFYYHJFSBSSQLXXNDYCANNMTCJCYPRRNYTYQNYYMBMSXNDLYLYSLJRLXYS";
-    listJP << "XQMLLYZLZJJJKYZZCSFBZXXMSTBJGNXYZHLXNMCWSCYZYFZLXBRNNNYLBNRTGZQYSATSWRYHYJZMZDHZGZDWYBSSCSKXSYHYTXXG";
-    listJP << "CQGXZZSHYXJSCRHMKKBXCZJYJYMKQHZJFNBHMQHYSNJNZYBKNQMCLGQHWLZNZSWXKHLJHYYBQLBFCDSXDLDSPFZPSKJYZWZXZDDX";
-    listJP << "JSMMEGJSCSSMGCLXXKYYYLNYPWWWGYDKZJGGGZGGSYCKNJWNJPCXBJJTQTJWDSSPJXZXNZXUMELPXFSXTLLXCLJXJJLJZXCTPSWX";
-    listJP << "LYDHLYQRWHSYCSQYYBYAYWJJJQFWQCQQCJQGXALDBZZYJGKGXPLTZYFXJLTPADKYQHPMATLCPDCKBMTXYBHKLENXDLEEGQDYMSAW";
-    listJP << "HZMLJTWYGXLYQZLJEEYYBQQFFNLYXRDSCTGJGXYYNKLLYQKCCTLHJLQMKKZGCYYGLLLJDZGYDHZWXPYSJBZKDZGYZZHYWYFQYTYZ";
-    listJP << "SZYEZZLYMHJJHTSMQWYZLKYYWZCSRKQYTLTDXWCTYJKLWSQZWBDCQYNCJSRSZJLKCDCDTLZZZACQQZZDDXYPLXZBQJYLZLLLQDDZ";
-    listJP << "QJYJYJZYXNYYYNYJXKXDAZWYRDLJYYYRJLXLLDYXJCYWYWNQCCLDDNYYYNYCKCZHXXCCLGZQJGKWPPCQQJYSBZZXYJSQPXJPZBSB";
-    listJP << "DSFNSFPZXHDWZTDWPPTFLZZBZDMYYPQJRSDZSQZSQXBDGCPZSWDWCSQZGMDHZXMWWFYBPDGPHTMJTHZSMMBGZMBZJCFZWFZBBZMQ";
-    listJP << "CFMBDMCJXLGPNJBBXGYHYYJGPTZGZMQBQTCGYXJXLWZKYDPDYMGCFTPFXYZTZXDZXTGKMTYBBCLBJASKYTSSQYYMSZXFJEWLXLLS";
-    listJP << "ZBQJJJAKLYLXLYCCTSXMCWFKKKBSXLLLLJYXTYLTJYYTDPJHNHNNKBYQNFQYYZBYYESSESSGDYHFHWTCJBSDZZTFDMXHCNJZYMQW";
-    listJP << "SRYJDZJQPDQBBSTJGGFBKJBXTGQHNGWJXJGDLLTHZHHYYYYYYSXWTYYYCCBDBPYPZYCCZYJPZYWCBDLFWZCWJDXXHYHLHWZZXJTC";
-    listJP << "ZLCDPXUJCZZZLYXJJTXPHFXWPYWXZPTDZZBDZCYHJHMLXBQXSBYLRDTGJRRCTTTHYTCZWMXFYTWWZCWJWXJYWCSKYBZSCCTZQNHX";
-    listJP << "NWXXKHKFHTSWOCCJYBCMPZZYKBNNZPBZHHZDLSYDDYTYFJPXYNGFXBYQXCBHXCPSXTYZDMKYSNXSXLHKMZXLYHDHKWHXXSSKQYHH";
-    listJP << "CJYXGLHZXCSNHEKDTGZXQYPKDHEXTYKCNYMYYYPKQYYYKXZLTHJQTBYQHXBMYHSQCKWWYLLHCYYLNNEQXQWMCFBDCCMLJGGXDQKT";
-    listJP << "LXKGNQCDGZJWYJJLYHHQTTTNWCHMXCXWHWSZJYDJCCDBQCDGDNYXZTHCQRXCBHZTQCBXWGQWYYBXHMBYMYQTYEXMQKYAQYRGYZSL";
-    listJP << "FYKKQHYSSQYSHJGJCNXKZYCXSBXYXHYYLSTYCXQTHYSMGSCPMMGCCCCCMTZTASMGQZJHKLOSQYLSWTMXSYQKDZLJQQYPLSYCZTCQ";
-    listJP << "QPBBQJZCLPKHQZYYXXDTDDTSJCXFFLLCHQXMJLWCJCXTSPYCXNDTJSHJWXDQQJSKXYAMYLSJHMLALYKXCYYDMNMDQMXMCZNNCYBZ";
-    listJP << "KKYFLMCHCMLHXRCJJHSYLNMTJZGZGYWJXSRXCWJGJQHQZDQJDCJJZKJKGDZQGJJYJYLXZXXCDQHHHEYTMHLFSBDJSYYSHFYSTCZQ";
-    listJP << "LPBDRFRZTZYKYWHSZYQKWDQZRKMSYNBCRXQBJYFAZPZZEDZCJYWBCJWHYJBQSZYWRYSZPTDKZPFPBNZTKLQYHBBZPNPPTYZZYBQN";
-    listJP << "YDCPJMMCYCQMCYFZZDCMNLFPBPLNGQJTBTTNJZPZBBZNJKLJQYLNBZQHKSJZNGGQSZZKYXSHPZSNBCGZKDDZQANZHJKDRTLZLSWJ";
-    listJP << "LJZLYWTJNDJZJHXYAYNCBGTZCSSQMNJPJYTYSWXZFKWJQTKHTZPLBHSNJZSYZBWZZZZLSYLSBJHDWWQPSLMMFBJDWAQYZTCJTBNN";
-    listJP << "WZXQXCDSLQGDSDPDZHJTQQPSWLYYJZLGYXYZLCTCBJTKTYCZJTQKBSJLGMGZDMCSGPYNJZYQYYKNXRPWSZXMTNCSZZYXYBYHYZAX";
-    listJP << "YWQCJTLLCKJJTJHGDXDXYQYZZBYWDLWQCGLZGJGQRQZCZSSBCRPCSKYDZNXJSQGXSSJMYDNSTZTPBDLTKZWXQWQTZEXNQCZGWEZK";
-    listJP << "SSBYBRTSSSLCCGBPSZQSZLCCGLLLZXHZQTHCZMQGYZQZNMCOCSZJMMZSQPJYGQLJYJPPLDXRGZYXCCSXHSHGTZNLZWZKJCXTCFCJ";
-    listJP << "XLBMQBCZZWPQDNHXLJCTHYZLGYLNLSZZPCXDSCQQHJQKSXZPBAJYEMSMJTZDXLCJYRYYNWJBNGZZTMJXLTBSLYRZPYLSSCNXPHLL";
-    listJP << "HYLLQQZQLXYMRSYCXZLMMCZLTZSDWTJJLLNZGGQXPFSKYGYGHBFZPDKMWGHCXMSGDXJMCJZDYCABXJDLNBCDQYGSKYDQTXDJJYXM";
-    listJP << "SZQAZDZFSLQXYJSJZYLBTXXWXQQZBJZUFBBLYLWDSLJHXJYZJWTDJCZFQZQZZDZSXZZQLZCDZFJHYSPYMPQZMLPPLFFXJJNZZYLS";
-    listJP << "JEYQZFPFZKSYWJJJHRDJZZXTXXGLGHYDXCSKYSWMMZCWYBAZBJKSHFHJCXMHFQHYXXYZFTSJYZFXYXPZLCHMZMBXHZZSXYFYMNCW";
-    listJP << "DABAZLXKTCSHHXKXJJZJSTHYGXSXYYHHHJWXKZXSSBZZWHHHCWTZZZPJXSNXQQJGZYZYWLLCWXZFXXYXYHXMKYYSWSQMNLNAYCYS";
-    listJP << "PMJKHWCQHYLAJJMZXHMMCNZHBHXCLXTJPLTXYJHDYYLTTXFSZHYXXSJBJYAYRSMXYPLCKDUYHLXRLNLLSTYZYYQYGYHHSCCSMZCT";
-    listJP << "ZQXKYQFPYYRPFFLKQUNTSZLLZMWWTCQQYZWTLLMLMPWMBZSSTZRBPDDTLQJJBXZCSRZQQYGWCSXFWZLXCCRSZDZMCYGGDZQSGTJS";
-    listJP << "WLJMYMMZYHFBJDGYXCCPSHXNZCSBSJYJGJMPPWAFFYFNXHYZXZYLREMZGZCYZSSZDLLJCSQFNXZKPTXZGXJJGFMYYYSNBTYLBNLH";
-    listJP << "PFZDCYFBMGQRRSSSZXYSGTZRNYDZZCDGPJAFJFZKNZBLCZSZPSGCYCJSZLMLRSZBZZLDLSLLYSXSQZQLYXZLSKKBRXBRBZCYCXZZ";
-    listJP << "ZEEYFGKLZLYYHGZSGZLFJHGTGWKRAAJYZKZQTSSHJJXDCYZUYJLZYRZDQQHGJZXSSZBYKJPBFRTJXLLFQWJHYLQTYMBLPZDXTZYG";
-    listJP << "BDHZZRBGXHWNJTJXLKSCFSMWLSDQYSJTXKZSCFWJLBXFTZLLJZLLQBLSQMQQCGCZFPBPHZCZJLPYYGGDTGWDCFCZQYYYQYSSCLXZ";
-    listJP << "SKLZZZGFFCQNWGLHQYZJJCZLQZZYJPJZZBPDCCMHJGXDQDGDLZQMFGPSYTSDYFWWDJZJYSXYYCZCYHZWPBYKXRYLYBHKJKSFXTZJ";
-    listJP << "MMCKHLLTNYYMSYXYZPYJQYCSYCWMTJJKQYRHLLQXPSGTLYYCLJSCPXJYZFNMLRGJJTYZBXYZMSJYJHHFZQMSYXRSZCWTLRTQZSST";
-    listJP << "KXGQKGSPTGCZNJSJCQCXHMXGGZTQYDJKZDLBZSXJLHYQGGGTHQSZPYHJHHGYYGKGGCWJZZYLCZLXQSFTGZSLLLMLJSKCTBLLZZSZ";
-    listJP << "MMNYTPZSXQHJCJYQXYZXZQZCPSHKZZYSXCDFGMWQRLLQXRFZTLYSTCTMJCXJJXHJNXTNRZTZFQYHQGLLGCXSZSJDJLJCYDSJTLNY";
-    listJP << "XHSZXCGJZYQPYLFHDJSBPCCZHJJJQZJQDYBSSLLCMYTTMQTBHJQNNYGKYRQYQMZGCJKPDCGMYZHQLLSLLCLMHOLZGDYYFZSLJCQZ";
-    listJP << "LYLZQJESHNYLLJXGJXLYSYYYXNBZLJSSZCQQCJYLLZLTJYLLZLLBNYLGQCHXYYXOXCXQKYJXXXYKLXSXXYQXCYKQXQCSGYXXYQXY";
-    listJP << "GYTQOHXHXPYXXXULCYEYCHZZCBWQBBWJQZSCSZSSLZYLKDESJZWMYMCYTSDSXXSCJPQQSQYLYYZYCMDJDZYWCBTJSYDJKCYDDJLB";
-    listJP << "DJJSODZYSYXQQYXDHHGQQYQHDYXWGMMMAJDYBBBPPBCMUUPLJZSMTXERXJMHQNUTPJDCBSSMSSSTKJTSSMMTRCPLZSZMLQDSDMJM";
-    listJP << "QPNQDXCFYNBFSDQXYXHYAYKQYDDLQYYYSSZBYDSLNTFQTZQPZMCHDHCZCWFDXTMYQSPHQYYXSRGJCWTJTZZQMGWJJTJHTQJBBHWZ";
-    listJP << "PXXHYQFXXQYWYYHYSCDYDHHQMNMTMWCPBSZPPZZGLMZFOLLCFWHMMSJZTTDHZZYFFYTZZGZYSKYJXQYJZQBHMBZZLYGHGFMSHPZF";
-    listJP << "ZSNCLPBQSNJXZSLXXFPMTYJYGBXLLDLXPZJYZJYHHZCYWHJYLSJEXFSZZYWXKZJLUYDTMLYMQJPWXYHXSKTQJEZRPXXZHHMHWQPW";
-    listJP << "QLYJJQJJZSZCPHJLCHHNXJLQWZJHBMZYXBDHHYPZLHLHLGFWLCHYYTLHJXCJMSCPXSTKPNHQXSRTYXXTESYJCTLSSLSTDLLLWWYH";
-    listJP << "DHRJZSFGXTSYCZYNYHTDHWJSLHTZDQDJZXXQHGYLTZPHCSQFCLNJTCLZPFSTPDYNYLGMJLLYCQHYSSHCHYLHQYQTMZYPBYWRFQYK";
-    listJP << "QSYSLZDQJMPXYYSSRHZJNYWTQDFZBWWTWWRXCWHGYHXMKMYYYQMSMZHNGCEPMLQQMTCWCTMMPXJPJJHFXYYZSXZHTYBMSTSYJTTQ";
-    listJP << "QQYYLHYNPYQZLCYZHZWSMYLKFJXLWGXYPJYTYSYXYMZCKTTWLKSMZSYLMPWLZWXWQZSSAQSYXYRHSSNTSRAPXCPWCMGDXHXZDZYF";
-    listJP << "JHGZTTSBJHGYZSZYSMYCLLLXBTYXHBBZJKSSDMALXHYCFYGMQYPJYCQXJLLLJGSLZGQLYCJCCZOTYXMTMTTLLWTGPXYMZMKLPSZZ";
-    listJP << "ZXHKQYSXCTYJZYHXSHYXZKXLZWPSQPYHJWPJPWXQQYLXSDHMRSLZZYZWTTCYXYSZZSHBSCCSTPLWSSCJCHNLCGCHSSPHYLHFHHXJ";
-    listJP << "SXYLLNYLSZDHZXYLSXLWZYKCLDYAXZCMDDYSPJTQJZLNWQPSSSWCTSTSZLBLNXSMNYYMJQBQHRZWTYYDCHQLXKPZWBGQYBKFCMZW";
-    listJP << "PZLLYYLSZYDWHXPSBCMLJBSCGBHXLQHYRLJXYSWXWXZSLDFHLSLYNJLZYFLYJYCDRJLFSYZFSLLCQYQFGJYHYXZLYLMSTDJCYHBZ";
-    listJP << "LLNWLXXYGYYHSMGDHXXHHLZZJZXCZZZCYQZFNGWPYLCPKPYYPMCLQKDGXZGGWQBDXZZKZFBXXLZXJTPJPTTBYTSZZDWSLCHZHSLT";
-    listJP << "YXHQLHYXXXYYZYSWTXZKHLXZXZPYHGCHKCFSYHUTJRLXFJXPTZTWHPLYXFCRHXSHXKYXXYHZQDXQWULHYHMJTBFLKHTXCWHJFWJC";
-    listJP << "FPQRYQXCYYYQYGRPYWSGSUNGWCHKZDXYFLXXHJJBYZWTSXXNCYJJYMSWZJQRMHXZWFQSYLZJZGBHYNSLBGTTCSYBYXXWXYHXYYXN";
-    listJP << "SQYXMQYWRGYQLXBBZLJSYLPSYTJZYHYZAWLRORJMKSCZJXXXYXCHDYXRYXXJDTSQFXLYLTSFFYXLMTYJMJUYYYXLTZCSXQZQHZXL";
-    listJP << "YYXZHDNBRXXXJCTYHLBRLMBRLLAXKYLLLJLYXXLYCRYLCJTGJCMTLZLLCYZZPZPCYAWHJJFYBDYYZSMPCKZDQYQPBPCJPDCYZMDP";
-    listJP << "BCYYDYCNNPLMTMLRMFMMGWYZBSJGYGSMZQQQZTXMKQWGXLLPJGZBQCDJJJFPKJKCXBLJMSWMDTQJXLDLPPBXCWRCQFBFQJCZAHZG";
-    listJP << "MYKPHYYHZYKNDKZMBPJYXPXYHLFPNYYGXJDBKXNXHJMZJXSTRSTLDXSKZYSYBZXJLXYSLBZYSLHXJPFXPQNBYLLJQKYGZMCYZZYM";
-    listJP << "CCSLCLHZFWFWYXZMWSXTYNXJHPYYMCYSPMHYSMYDYSHQYZCHMJJMZCAAGCFJBBHPLYZYLXXSDJGXDHKXXTXXNBHRMLYJSLTXMRHN";
-    listJP << "LXQJXYZLLYSWQGDLBJHDCGJYQYCMHWFMJYBMBYJYJWYMDPWHXQLDYGPDFXXBCGJSPCKRSSYZJMSLBZZJFLJJJLGXZGYXYXLSZQYX";
-    listJP << "BEXYXHGCXBPLDYHWETTWWCJMBTXCHXYQXLLXFLYXLLJLSSFWDPZSMYJCLMWYTCZPCHQEKCQBWLCQYDPLQPPQZQFJQDJHYMMCXTXD";
-    listJP << "RMJWRHXCJZYLQXDYYNHYYHRSLSRSYWWZJYMTLTLLGTQCJZYABTCKZCJYCCQLJZQXALMZYHYWLWDXZXQDLLQSHGPJFJLJHJABCQZD";
-    listJP << "JGTKHSSTCYJLPSWZLXZXRWGLDLZRLZXTGSLLLLZLYXXWGDZYGBDPHZPBRLWSXQBPFDWOFMWHLYPCBJCCLDMBZPBZZLCYQXLDOMZB";
-    listJP << "LZWPDWYYGDSTTHCSQSCCRSSSYSLFYBFNTYJSZDFNDPDHDZZMBBLSLCMYFFGTJJQWFTMTPJWFNLBZCMMJTGBDZLQLPYFHYYMJYLSD";
-    listJP << "CHDZJWJCCTLJCLDTLJJCPDDSQDSSZYBNDBJLGGJZXSXNLYCYBJXQYCBYLZCFZPPGKCXZDZFZTJJFJSJXZBNZYJQTTYJYHTYCZHYM";
-    listJP << "DJXTTMPXSPLZCDWSLSHXYPZGTFMLCJTYCBPMGDKWYCYZCDSZZYHFLYCTYGWHKJYYLSJCXGYWJCBLLCSNDDBTZBSCLYZCZZSSQDLL";
-    listJP << "MQYYHFSLQLLXFTYHABXGWNYWYYPLLSDLDLLBJCYXJZMLHLJDXYYQYTDLLLBUGBFDFBBQJZZMDPJHGCLGMJJPGAEHHBWCQXAXHHHZ";
-    listJP << "CHXYPHJAXHLPHJPGPZJQCQZGJJZZUZDMQYYBZZPHYHYBWHAZYJHYKFGDPFQSDLZMLJXKXGALXZDAGLMDGXMWZQYXXDXXPFDMMSSY";
-    listJP << "MPFMDMMKXKSYZYSHDZKXSYSMMZZZMSYDNZZCZXFPLSTMZDNMXCKJMZTYYMZMZZMSXHHDCZJEMXXKLJSTLWLSQLYJZLLZJSSDPPMH";
-    listJP << "NLZJCZYHMXXHGZCJMDHXTKGRMXFWMCGMWKDTKSXQMMMFZZYDKMSCLCMPCGMHSPXQPZDSSLCXKYXTWLWJYAHZJGZQMCSNXYYMMPML";
-    listJP << "KJXMHLMLQMXCTKZMJQYSZJSYSZHSYJZJCDAJZYBSDQJZGWZQQXFKDMSDJLFWEHKZQKJPEYPZYSZCDWYJFFMZZYLTTDZZEFMZLBNP";
-    listJP << "PLPLPEPSZALLTYLKCKQZKGENQLWAGYXYDPXLHSXQQWQCQXQCLHYXXMLYCCWLYMQYSKGCHLCJNSZKPYZKCQZQLJPDMDZHLASXLBYD";
-    listJP << "WQLWDNBQCRYDDZTJYBKBWSZDXDTNPJDTCTQDFXQQMGNXECLTTBKPWSLCTYQLPWYZZKLPYGZCQQPLLKCCYLPQMZCZQCLJSLQZDJXL";
-    listJP << "DDHPZQDLJJXZQDXYZQKZLJCYQDYJPPYPQYKJYRMPCBYMCXKLLZLLFQPYLLLMBSGLCYSSLRSYSQTMXYXZQZFDZUYSYZTFFMZZSMZQ";
-    listJP << "HZSSCCMLYXWTPZGXZJGZGSJSGKDDHTQGGZLLBJDZLCBCHYXYZHZFYWXYZYMSDBZZYJGTSMTFXQYXQSTDGSLNXDLRYZZLRYYLXQHT";
-    listJP << "XSRTZNGZXBNQQZFMYKMZJBZYMKBPNLYZPBLMCNQYZZZSJZHJCTZKHYZZJRDYZHNPXGLFZTLKGJTCTSSYLLGZRZBBQZZKLPKLCZYS";
-    listJP << "SUYXBJFPNJZZXCDWXZYJXZZDJJKGGRSRJKMSMZJLSJYWQSKYHQJSXPJZZZLSNSHRNYPZTWCHKLPSRZLZXYJQXQKYSJYCZTLQZYBB";
-    listJP << "YBWZPQDWWYZCYTJCJXCKCWDKKZXSGKDZXWWYYJQYYTCYTDLLXWKCZKKLCCLZCQQDZLQLCSFQCHQHSFSMQZZLNBJJZBSJHTSZDYSJ";
-    listJP << "QJPDLZCDCWJKJZZLPYCGMZWDJJBSJQZSYZYHHXJPBJYDSSXDZNCGLQMBTSFSBPDZDLZNFGFJGFSMPXJQLMBLGQCYYXBQKDJJQYRF";
-    listJP << "KZTJDHCZKLBSDZCFJTPLLJGXHYXZCSSZZXSTJYGKGCKGYOQXJPLZPBPGTGYJZGHZQZZLBJLSQFZGKQQJZGYCZBZQTLDXRJXBSXXP";
-    listJP << "ZXHYZYCLWDXJJHXMFDZPFZHQHQMQGKSLYHTYCGFRZGNQXCLPDLBZCSCZQLLJBLHBZCYPZZPPDYMZZSGYHCKCPZJGSLJLNSCDSLDL";
-    listJP << "XBMSTLDDFJMKDJDHZLZXLSZQPQPGJLLYBDSZGQLBZLSLKYYHZTTNTJYQTZZPSZQZTLLJTYYLLQLLQYZQLBDZLSLYYZYMDFSZSNHL";
-    listJP << "XZNCZQZPBWSKRFBSYZMTHBLGJPMCZZLSTLXSHTCSYZLZBLFEQHLXFLCJLYLJQCBZLZJHHSSTBRMHXZHJZCLXFNBGXGTQJCZTMSFZ";
-    listJP << "KJMSSNXLJKBHSJXNTNLZDNTLMSJXGZJYJCZXYJYJWRWWQNZTNFJSZPZSHZJFYRDJSFSZJZBJFZQZZHZLXFYSBZQLZSGYFTZDCSZX";
-    listJP << "ZJBQMSZKJRHYJZCKMJKHCHGTXKXQGLXPXFXTRTYLXJXHDTSJXHJZJXZWZLCQSBTXWXGXTXXHXFTSDKFJHZYJFJXRZSDLLLTQSQQZ";
-    listJP << "QWZXSYQTWGWBZCGZLLYZBCLMQQTZHZXZXLJFRMYZFLXYSQXXJKXRMQDZDMMYYBSQBHGZMWFWXGMXLZPYYTGZYCCDXYZXYWGSYJYZ";
-    listJP << "NBHPZJSQSYXSXRTFYZGRHZTXSZZTHCBFCLSYXZLZQMZLMPLMXZJXSFLBYZMYQHXJSXRXSQZZZSSLYFRCZJRCRXHHZXQYDYHXSJJH";
-    listJP << "ZCXZBTYNSYSXJBQLPXZQPYMLXZKYXLXCJLCYSXXZZLXDLLLJJYHZXGYJWKJRWYHCPSGNRZLFZWFZZNSXGXFLZSXZZZBFCSYJDBRJ";
-    listJP << "KRDHHGXJLJJTGXJXXSTJTJXLYXQFCSGSWMSBCTLQZZWLZZKXJMLTMJYHSDDBXGZHDLBMYJFRZFSGCLYJBPMLYSMSXLSZJQQHJZFX";
-    listJP << "GFQFQBPXZGYYQXGZTCQWYLTLGWSGWHRLFSFGZJMGMGBGTJFSYZZGZYZAFLSSPMLPFLCWBJZCLJJMZLPJJLYMQDMYYYFBGYGYZMLY";
-    listJP << "ZDXQYXRQQQHSYYYQXYLJTYXFSFSLLGNQCYHYCWFHCCCFXPYLYPLLZYXXXXXKQHHXSHJZCFZSCZJXCPZWHHHHHAPYLQALPQAFYHXD";
-    listJP << "YLUKMZQGGGDDESRNNZLTZGCHYPPYSQJJHCLLJTOLNJPZLJLHYMHEYDYDSQYCDDHGZUNDZCLZYZLLZNTNYZGSLHSLPJJBDGWXPCDU";
-    listJP << "TJCKLKCLWKLLCASSTKZZDNQNTTLYYZSSYSSZZRYLJQKCQDHHCRXRZYDGRGCWCGZQFFFPPJFZYNAKRGYWYQPQXXFKJTSZZXSWZDDF";
-    listJP << "BBXTBGTZKZNPZZPZXZPJSZBMQHKCYXYLDKLJNYPKYGHGDZJXXEAHPNZKZTZCMXCXMMJXNKSZQNMNLWBWWXJKYHCPSTMCSQTZJYXT";
-    listJP << "PCTPDTNNPGLLLZSJLSPBLPLQHDTNJNLYYRSZFFJFQWDPHZDWMRZCCLODAXNSSNYZRESTYJWJYJDBCFXNMWTTBYLWSTSZGYBLJPXG";
-    listJP << "LBOCLHPCBJLTMXZLJYLZXCLTPNCLCKXTPZJSWCYXSFYSZDKNTLBYJCYJLLSTGQCBXRYZXBXKLYLHZLQZLNZCXWJZLJZJNCJHXMNZ";
-    listJP << "ZGJZZXTZJXYCYYCXXJYYXJJXSSSJSTSSTTPPGQTCSXWZDCSYFPTFBFHFBBLZJCLZZDBXGCXLQPXKFZFLSYLTUWBMQJHSZBMDDBCY";
-    listJP << "SCCLDXYCDDQLYJJWMQLLCSGLJJSYFPYYCCYLTJANTJJPWYCMMGQYYSXDXQMZHSZXPFTWWZQSWQRFKJLZJQQYFBRXJHHFWJJZYQAZ";
-    listJP << "MYFRHCYYBYQWLPEXCCZSTYRLTTDMQLYKMBBGMYYJPRKZNPBSXYXBHYZDJDNGHPMFSGMWFZMFQMMBCMZZCJJLCNUXYQLMLRYGQZCY";
-    listJP << "XZLWJGCJCGGMCJNFYZZJHYCPRRCMTZQZXHFQGTJXCCJEAQCRJYHPLQLSZDJRBCQHQDYRHYLYXJSYMHZYDWLDFRYHBPYDTSSCNWBX";
-    listJP << "GLPZMLZZTQSSCPJMXXYCSJYTYCGHYCJWYRXXLFEMWJNMKLLSWTXHYYYNCMMCWJDQDJZGLLJWJRKHPZGGFLCCSCZMCBLTBHBQJXQD";
-    listJP << "SPDJZZGKGLFQYWBZYZJLTSTDHQHCTCBCHFLQMPWDSHYYTQWCNZZJTLBYMBPDYYYXSQKXWYYFLXXNCWCXYPMAELYKKJMZZZBRXYYQ";
-    listJP << "JFLJPFHHHYTZZXSGQQMHSPGDZQWBWPJHZJDYSCQWZKTXXSQLZYYMYSDZGRXCKKUJLWPYSYSCSYZLRMLQSYLJXBCXTLWDQZPCYCYK";
-    listJP << "PPPNSXFYZJJRCEMHSZMSXLXGLRWGCSTLRSXBZGBZGZTCPLUJLSLYLYMTXMTZPALZXPXJTJWTCYYZLBLXBZLQMYLXPGHDSLSSDMXM";
-    listJP << "BDZZSXWHAMLCZCPJMCNHJYSNSYGCHSKQMZZQDLLKABLWJXSFMOCDXJRRLYQZKJMYBYQLYHETFJZFRFKSRYXFJTWDSXXSYSQJYSLY";
-    listJP << "XWJHSNLXYYXHBHAWHHJZXWMYLJCSSLKYDZTXBZSYFDXGXZJKHSXXYBSSXDPYNZWRPTQZCZENYGCXQFJYKJBZMLJCMQQXUOXSLYXX";
-    listJP << "LYLLJDZBTYMHPFSTTQQWLHOKYBLZZALZXQLHZWRRQHLSTMYPYXJJXMQSJFNBXYXYJXXYQYLTHYLQYFMLKLJTMLLHSZWKZHLJMLHL";
-    listJP << "JKLJSTLQXYLMBHHLNLZXQJHXCFXXLHYHJJGBYZZKBXSCQDJQDSUJZYYHZHHMGSXCSYMXFEBCQWWRBPYYJQTYZCYQYQQZYHMWFFHG";
-    listJP << "ZFRJFCDPXNTQYZPDYKHJLFRZXPPXZDBBGZQSTLGDGYLCQMLCHHMFYWLZYXKJLYPQHSYWMQQGQZMLZJNSQXJQSYJYCBEHSXFSZPXZ";
-    listJP << "WFLLBCYYJDYTDTHWZSFJMQQYJLMQXXLLDTTKHHYBFPWTYYSQQWNQWLGWDEBZWCMYGCULKJXTMXMYJSXHYBRWFYMWFRXYQMXYSZTZ";
-    listJP << "ZTFYKMLDHQDXWYYNLCRYJBLPSXCXYWLSPRRJWXHQYPHTYDNXHHMMYWYTZCSQMTSSCCDALWZTCPQPYJLLQZYJSWXMZZMMYLMXCLMX";
-    listJP << "CZMXMZSQTZPPQQBLPGXQZHFLJJHYTJSRXWZXSCCDLXTYJDCQJXSLQYCLZXLZZXMXQRJMHRHZJBHMFLJLMLCLQNLDXZLLLPYPSYJY";
-    listJP << "SXCQQDCMQJZZXHNPNXZMEKMXHYKYQLXSXTXJYYHWDCWDZHQYYBGYBCYSCFGPSJNZDYZZJZXRZRQJJYMCANYRJTLDPPYZBSTJKXXZ";
-    listJP << "YPFDWFGZZRPYMTNGXZQBYXNBUFNQKRJQZMJEGRZGYCLKXZDSKKNSXKCLJSPJYYZLQQJYBZSSQLLLKJXTBKTYLCCDDBLSPPFYLGYD";
-    listJP << "TZJYQGGKQTTFZXBDKTYYHYBBFYTYYBCLPDYTGDHRYRNJSPTCSNYJQHKLLLZSLYDXXWBCJQSPXBPJZJCJDZFFXXBRMLAZHCSNDLBJ";
-    listJP << "DSZBLPRZTSWSBXBCLLXXLZDJZSJPYLYXXYFTFFFBHJJXGBYXJPMMMPSSJZJMTLYZJXSWXTYLEDQPJMYGQZJGDJLQJWJQLLSJGJGY";
-    listJP << "GMSCLJJXDTYGJQJQJCJZCJGDZZSXQGSJGGCXHQXSNQLZZBXHSGZXCXYLJXYXYYDFQQJHJFXDHCTXJYRXYSQTJXYEFYYSSYYJXNCY";
-    listJP << "ZXFXMSYSZXYYSCHSHXZZZGZZZGFJDLTYLNPZGYJYZYYQZPBXQBDZTZCZYXXYHHSQXSHDHGQHJHGYWSZTMZMLHYXGEBTYLZKQWYTJ";
-    listJP << "ZRCLEKYSTDBCYKQQSAYXCJXWWGSBHJYZYDHCSJKQCXSWXFLTYNYZPZCCZJQTZWJQDZZZQZLJJXLSBHPYXXPSXSHHEZTXFPTLQYZZ";
-    listJP << "XHYTXNCFZYYHXGNXMYWXTZSJPTHHGYMXMXQZXTSBCZYJYXXTYYZYPCQLMMSZMJZZLLZXGXZAAJZYXJMZXWDXZSXZDZXLEYJJZQBH";
-    listJP << "ZWZZZQTZPSXZTDSXJJJZNYAZPHXYYSRNQDTHZHYYKYJHDZXZLSWCLYBZYECWCYCRYLCXNHZYDZYDYJDFRJJHTRSQTXYXJRJHOJYN";
-    listJP << "XELXSFSFJZGHPZSXZSZDZCQZBYYKLSGSJHCZSHDGQGXYZGXCHXZJWYQWGYHKSSEQZZNDZFKWYSSTCLZSTSYMCDHJXXYWEYXCZAYD";
-    listJP << "MPXMDSXYBSQMJMZJMTZQLPJYQZCGQHXJHHLXXHLHDLDJQCLDWBSXFZZYYSCHTYTYYBHECXHYKGJPXHHYZJFXHWHBDZFYZBCAPNPG";
-    listJP << "NYDMSXHMMMMAMYNBYJTMPXYYMCTHJBZYFCGTYHWPHFTWZZEZSBZEGPFMTSKFTYCMHFLLHGPZJXZJGZJYXZSBBQSCZZLZCCSTPGXM";
-    listJP << "JSFTCCZJZDJXCYBZLFCJSYZFGSZLYBCWZZBYZDZYPSWYJZXZBDSYUXLZZBZFYGCZXBZHZFTPBGZGEJBSTGKDMFHYZZJHZLLZZGJQ";
-    listJP << "ZLSFDJSSCBZGPDLFZFZSZYZYZSYGCXSNXXCHCZXTZZLJFZGQSQYXZJQDCCZTQCDXZJYQJQCHXZTDLGSCXZSYQJQTZWLQDQZTQCHQ";
-    listJP << "QJZYEZZZPBWKDJFCJPZTYPQYQTTYNLMBDKTJZPQZQZZFPZSBNJLGYJDXJDZZKZGQKXDLPZJTCJDQBXDJQJSTCKNXBXZMSLYJCQMT";
-    listJP << "JQWWCJQNJNLLLHJCWQTBZQYDZCZPZZDZYDDCYZZZCCJTTJFZDPRRTZTJDCQTQZDTJNPLZBCLLCTZSXKJZQZPZLBZRBTJDCXFCZDB";
-    listJP << "CCJJLTQQPLDCGZDBBZJCQDCJWYNLLZYZCCDWLLXWZLXRXNTQQCZXKQLSGDFQTDDGLRLAJJTKUYMKQLLTZYTDYYCZGJWYXDXFRSKS";
-    listJP << "TQTENQMRKQZHHQKDLDAZFKYPBGGPZREBZZYKZZSPEGJXGYKQZZZSLYSYYYZWFQZYLZZLZHWCHKYPQGNPGBLPLRRJYXCCSYYHSFZF";
-    listJP << "YBZYYTGZXYLXCZWXXZJZBLFFLGSKHYJZEYJHLPLLLLCZGXDRZELRHGKLZZYHZLYQSZZJZQLJZFLNBHGWLCZCFJYSPYXZLZLXGCCP";
-    listJP << "ZBLLCYBBBBUBBCBPCRNNZCZYRBFSRLDCGQYYQXYGMQZWTZYTYJXYFWTEHZZJYWLCCNTZYJJZDEDPZDZTSYQJHDYMBJNYJZLXTSST";
-    listJP << "PHNDJXXBYXQTZQDDTJTDYYTGWSCSZQFLSHLGLBCZPHDLYZJYCKWTYTYLBNYTSDSYCCTYSZYYEBHEXHQDTWNYGYCLXTSZYSTQMYGZ";
-    listJP << "AZCCSZZDSLZCLZRQXYYELJSBYMXSXZTEMBBLLYYLLYTDQYSHYMRQWKFKBFXNXSBYCHXBWJYHTQBPBSBWDZYLKGZSKYHXQZJXHXJX";
-    listJP << "GNLJKZLYYCDXLFYFGHLJGJYBXQLYBXQPQGZTZPLNCYPXDJYQYDYMRBESJYYHKXXSTMXRCZZYWXYQYBMCLLYZHQYZWQXDBXBZWZMS";
-    listJP << "LPDMYSKFMZKLZCYQYCZLQXFZZYDQZPZYGYJYZMZXDZFYFYTTQTZHGSPCZMLCCYTZXJCYTJMKSLPZHYSNZLLYTPZCTZZCKTXDHXXT";
-    listJP << "QCYFKSMQCCYYAZHTJPCYLZLYJBJXTPNYLJYYNRXSYLMMNXJSMYBCSYSYLZYLXJJQYLDZLPQBFZZBLFNDXQKCZFYWHGQMRDSXYCYT";
-    listJP << "XNQQJZYYPFZXDYZFPRXEJDGYQBXRCNFYYQPGHYJDYZXGRHTKYLNWDZNTSMPKLBTHBPYSZBZTJZSZZJTYYXZPHSSZZBZCZPTQFZMY";
-    listJP << "FLYPYBBJQXZMXXDJMTSYSKKBJZXHJCKLPSMKYJZCXTMLJYXRZZQSLXXQPYZXMKYXXXJCLJPRMYYGADYSKQLSNDHYZKQXZYZTCGHZ";
-    listJP << "TLMLWZYBWSYCTBHJHJFCWZTXWYTKZLXQSHLYJZJXTMPLPYCGLTBZZTLZJCYJGDTCLKLPLLQPJMZPAPXYZLKKTKDZCZZBNZDYDYQZ";
-    listJP << "JYJGMCTXLTGXSZLMLHBGLKFWNWZHDXUHLFMKYSLGXDTWWFRJEJZTZHYDXYKSHWFZCQSHKTMQQHTZHYMJDJSKHXZJZBZZXYMPAGQM";
-    listJP << "STPXLSKLZYNWRTSQLSZBPSPSGZWYHTLKSSSWHZZLYYTNXJGMJSZSUFWNLSOZTXGXLSAMMLBWLDSZYLAKQCQCTMYCFJBSLXCLZZCL";
-    listJP << "XXKSBZQCLHJPSQPLSXXCKSLNHPSFQQYTXYJZLQLDXZQJZDYYDJNZPTUZDSKJFSLJHYLZSQZLBTXYDGTQFDBYAZXDZHZJNHHQBYKN";
-    listJP << "XJJQCZMLLJZKSPLDYCLBBLXKLELXJLBQYCXJXGCNLCQPLZLZYJTZLJGYZDZPLTQCSXFDMNYCXGBTJDCZNBGBQYQJWGKFHTNPYQZQ";
-    listJP << "GBKPBBYZMTJDYTBLSQMPSXTBNPDXKLEMYYCJYNZCTLDYKZZXDDXHQSHDGMZSJYCCTAYRZLPYLTLKXSLZCGGEXCLFXLKJRTLQJAQZ";
-    listJP << "NCMBYDKKCXGLCZJZXJHPTDJJMZQYKQSECQZDSHHADMLZFMMZBGNTJNNLGBYJBRBTMLBYJDZXLCJLPLDLPCQDHLXZLYCBLCXZZJAD";
-    listJP << "JLNZMMSSSMYBHBSQKBHRSXXJMXSDZNZPXLGBRHWGGFCXGMSKLLTSJYYCQLTSKYWYYHYWXBXQYWPYWYKQLSQPTNTKHQCWDQKTWPXX";
-    listJP << "HCPTHTWUMSSYHBWCRWXHJMKMZNGWTMLKFGHKJYLSYYCXWHYECLQHKQHTTQKHFZLDXQWYZYYDESBPKYRZPJFYYZJCEQDZZDLATZBB";
-    listJP << "FJLLCXDLMJSSXEGYGSJQXCWBXSSZPDYZCXDNYXPPZYDLYJCZPLTXLSXYZYRXCYYYDYLWWNZSAHJSYQYHGYWWAXTJZDAXYSRLTDPS";
-    listJP << "SYYFNEJDXYZHLXLLLZQZSJNYQYQQXYJGHZGZCYJCHZLYCDSHWSHJZYJXCLLNXZJJYYXNFXMWFPYLCYLLABWDDHWDXJMCXZTZPMLQ";
-    listJP << "ZHSFHZYNZTLLDYWLSLXHYMMYLMBWWKYXYADTXYLLDJPYBPWUXJMWMLLSAFDLLYFLBHHHBQQLTZJCQJLDJTFFKMMMBYTHYGDCQRDD";
-    listJP << "WRQJXNBYSNWZDBYYTBJHPYBYTTJXAAHGQDQTMYSTQXKBTZPKJLZRBEQQSSMJJBDJOTGTBXPGBKTLHQXJJJCTHXQDWJLWRFWQGWSH";
-    listJP << "CKRYSWGFTGYGBXSDWDWRFHWYTJJXXXJYZYSLPYYYPAYXHYDQKXSHXYXGSKQHYWFDDDPPLCJLQQEEWXKSYYKDYPLTJTHKJLTCYYHH";
-    listJP << "JTTPLTZZCDLTHQKZXQYSTEEYWYYZYXXYYSTTJKLLPZMCYHQGXYHSRMBXPLLNQYDQHXSXXWGDQBSHYLLPJJJTHYJKYPPTHYYKTYEZ";
-    listJP << "YENMDSHLCRPQFDGFXZPSFTLJXXJBSWYYSKSFLXLPPLBBBLBSFXFYZBSJSSYLPBBFFFFSSCJDSTZSXZRYYSYFFSYZYZBJTBCTSBSD";
-    listJP << "HRTJJBYTCXYJEYLXCBNEBJDSYXYKGSJZBXBYTFZWGENYHHTHZHHXFWGCSTBGXKLSXYWMTMBYXJSTZSCDYQRCYTWXZFHMYMCXLZNS";
-    listJP << "DJTTTXRYCFYJSBSDYERXJLJXBBDEYNJGHXGCKGSCYMBLXJMSZNSKGXFBNBPTHFJAAFXYXFPXMYPQDTZCXZZPXRSYWZDLYBBKTYQP";
-    listJP << "QJPZYPZJZNJPZJLZZFYSBTTSLMPTZRTDXQSJEHBZYLZDHLJSQMLHTXTJECXSLZZSPKTLZKQQYFSYGYWPCPQFHQHYTQXZKRSGTTSQ";
-    listJP << "CZLPTXCDYYZXSQZSLXLZMYCPCQBZYXHBSXLZDLTCDXTYLZJYYZPZYZLTXJSJXHLPMYTXCQRBLZSSFJZZTNJYTXMYJHLHPPLCYXQJ";
-    listJP << "QQKZZSCPZKSWALQSBLCCZJSXGWWWYGYKTJBBZTDKHXHKGTGPBKQYSLPXPJCKBMLLXDZSTBKLGGQKQLSBKKTFXRMDKBFTPZFRTBBR";
-    listJP << "FERQGXYJPZSSTLBZTPSZQZSJDHLJQLZBPMSMMSXLQQNHKNBLRDDNXXDHDDJCYYGYLXGZLXSYGMQQGKHBPMXYXLYTQWLWGCPBMQXC";
-    listJP << "YZYDRJBHTDJYHQSHTMJSBYPLWHLZFFNYPMHXXHPLTBQPFBJWQDBYGPNZTPFZJGSDDTQSHZEAWZZYLLTYYBWJKXXGHLFKXDJTMSZS";
-    listJP << "QYNZGGSWQSPHTLSSKMCLZXYSZQZXNCJDQGZDLFNYKLJCJLLZLMZZNHYDSSHTHZZLZZBBHQZWWYCRZHLYQQJBEYFXXXWHSRXWQHWP";
-    listJP << "SLMSSKZTTYGYQQWRSLALHMJTQJSMXQBJJZJXZYZKXBYQXBJXSHZTSFJLXMXZXFGHKZSZGGYLCLSARJYHSLLLMZXELGLXYDJYTLFB";
-    listJP << "HBPNLYZFBBHPTGJKWETZHKJJXZXXGLLJLSTGSHJJYQLQZFKCGNNDJSSZFDBCTWWSEQFHQJBSAQTGYPQLBXBMMYWXGSLZHGLZGQYF";
-    listJP << "LZBYFZJFRYSFMBYZHQGFWZSYFYJJPHZBYYZFFWODGRLMFTWLBZGYCQXCDJYGZYYYYTYTYDWEGAZYHXJLZYYHLRMGRXXZCLHNELJJ";
-    listJP << "TJTPWJYBJJBXJJTJTEEKHWSLJPLPSFYZPQQBDLQJJTYYQLYZKDKSQJYYQZLDQTGJQYZJSUCMRYQTHTEJMFCTYHYPKMHYZWJDQFHY";
-    listJP << "YXWSHCTXRLJHQXHCCYYYJLTKTTYTMXGTCJTZAYYOCZLYLBSZYWJYTSJYHBYSHFJLYGJXXTMZYYLTXXYPZLXYJZYZYYPNHMYMDYYL";
-    listJP << "BLHLSYYQQLLNJJYMSOYQBZGDLYXYLCQYXTSZEGXHZGLHWBLJHEYXTWQMAKBPQCGYSHHEGQCMWYYWLJYJHYYZLLJJYLHZYHMGSLJL";
-    listJP << "JXCJJYCLYCJPCPZJZJMMYLCQLNQLJQJSXYJMLSZLJQLYCMMHCFMMFPQQMFYLQMCFFQMMMMHMZNFHHJGTTHHKHSLNCHHYQDXTMMQD";
-    listJP << "CYZYXYQMYQYLTDCYYYZAZZCYMZYDLZFFFMMYCQZWZZMABTBYZTDMNZZGGDFTYPCGQYTTSSFFWFDTZQSSYSTWXJHXYTSXXYLBYQHW";
-    listJP << "WKXHZXWZNNZZJZJJQJCCCHYYXBZXZCYZTLLCQXYNJYCYYCYNZZQYYYEWYCZDCJYCCHYJLBTZYYCQWMPWPYMLGKDLDLGKQQBGYCHJ";
-    listJP << "XY";
-    QString strChineseFirstPY = listJP.join("");
-    if(cnstr.length() == 0) {
-        return cnstr;
-    }
-
-    QString str;
-    int index = 0;
-    for(int i = 0; i < cnstr.length(); i++) {
-        //若是字母或数字则直接输出
-        ushort vChar = cnstr.at(i).unicode() ;
-        if((vChar >= 'a' && vChar <= 'z' ) || (vChar >= 'A' && vChar <= 'Z')) {
-            str.append(cnstr.at(i).toUpper());
-        }
-
-        if((vChar >= '0' && vChar <= '9')) {
-            str.append(cnstr.at(i));
-        } else {
-            index = (int)vChar - 19968;
-            if(index >= 0 && index < strChineseFirstPY.length()) {
-                str.append(strChineseFirstPY.at(index));
-            }
-        }
-    }
-    return str;
-}

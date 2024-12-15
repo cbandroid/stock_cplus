@@ -5,14 +5,16 @@
 #include <QTableView>
 #include <QStandardItemModel>
 #include "getf10info.h"
-    
+
+class GlobalVar;
 class F10View : public QTableView
 {
 public:
-    F10View();
+    F10View(GlobalVar *pGlobalVar);
+    ~F10View();
     QTableView *stockInfoView;
     QStandardItemModel *model;
-    GetF10Info getF10Info;
+    GetF10Info *getF10Info;
     void dealWithHotRank();
     void dealWithMainIndex();
     void dealWithBusinessAnalysis();

@@ -7,12 +7,13 @@
 #include <QTextCodec>
 #include <QFile>
 
+class GlobalVar;
 
 class GetF10Info : public QObject
 {
     Q_OBJECT
 public:
-    GetF10Info(QObject *parent = nullptr);
+    GetF10Info(GlobalVar *pGlobalVar,QObject *parent = nullptr);
 //    QNetworkAccessManager *naManager=new QNetworkAccessManager(this);
     QList<QStringList> f10QList;
     QStringList colList;
@@ -27,6 +28,8 @@ public:
     void getData(const QByteArray &allData,QStringList key,QStringList value,QStringList &col,QList<QStringList> &l);
     void getAllData(QStringList key,QStringList value,QString url);
     void calcPeriod();
+private:
+    GlobalVar *m_pGlobalVar;
 };
 
 #endif // GETF10INFO_H

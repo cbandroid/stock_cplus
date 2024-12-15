@@ -1,12 +1,14 @@
 #include <qjsondocument.h>
 #include <qjsonobject.h>
+#include "utilityex.h"
 #include "globalvar.h"
 #include "getf10info.h"
+#include "NetworkManager.h"
 
-
-GetF10Info::GetF10Info(QObject *parent)
+GetF10Info::GetF10Info(GlobalVar *pGlobalVar,QObject *parent)
     : QObject{parent}
 {
+    m_pGlobalVar=pGlobalVar;
 //    naManager = new QNetworkAccessManager(this);
 //    calcPeriod();
 }
@@ -17,23 +19,30 @@ void GetF10Info::getStockHotRank()
     QJsonObject json;
     json.insert("appId", "appId01");
     json.insert("globalId", "786e4c21-70dc-435a-93bb-38");
-    json.insert("srcSecurityCode", GlobalVar::getStockSymbol());
-
+    json.insert("srcSecurityCode", m_pGlobalVar->getStockSymbol());
+    NetworkManager networkManager;
     QJsonDocument doc;
     doc.setObject(json);
     QByteArray dataArray = doc.toJson(QJsonDocument::Compact);
     QByteArray allData;
-    GlobalVar::postData(dataArray,allData,1,QUrl("https://emappdata.eastmoney.com/stockrank/getHotStockRankList"));
+ 
+    QString qUrl = "https://emappdata.eastmoney.com/stockrank/getHotStockRankList";
+
+    networkManager.TryPostExJson(qUrl,dataArray,allData);
+
     QJsonParseError jsonError;
     doc = QJsonDocument::fromJson(allData, &jsonError);
     if (jsonError.error == QJsonParseError::NoError)
     {
         QJsonObject jsonObject = doc.object();
         QJsonArray data=jsonObject.value("data").toArray();
-        for (int i = 0; i < data.size(); ++i)
+        QJsonValue value;
+        QVariantMap ceilMap;
+        int nSize=data.size();
+        for (int i = 0; i < nSize; ++i)
         {
-            QJsonValue value = data.at(i);
-            QVariantMap ceilMap = value.toVariant().toMap();
+            value = data.at(i);
+            ceilMap = value.toVariant().toMap();
             QStringList dataList;
             dataList<<ceilMap.value("calcTime").toString()<<ceilMap.value("srcSecurityCode").toString()
                      <<ceilMap.value("conceptName").toString()<<ceilMap.value("conceptId").toString()
@@ -42,21 +51,28 @@ void GetF10Info::getStockHotRank()
             f10QList.append(dataList);
         }
     }
-    QString url="https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_CORETHEME_BOARDTYPE&columns=SECUCODE%2CSECURITY_CODE%2CSECURITY_NAME_ABBR%2CBOARD_CODE%2CBOARD_NAME%2CIS_PRECISE%2CBOARD_RANK&source=WEB&client=WEB&filter=(SECURITY_CODE%3D%22"+GlobalVar::curCode+"%22)&sortColumns=BOARD_RANK&sortTypes=1&_=1701002504740";
-    GlobalVar::getData(allData,1,QUrl(url));
+    QString url="https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_CORETHEME_BOARDTYPE&columns=SECUCODE%2CSECURITY_CODE%2CSECURITY_NAME_ABBR%2CBOARD_CODE%2CBOARD_NAME%2CIS_PRECISE%2CBOARD_RANK&source=WEB&client=WEB&filter=(SECURITY_CODE%3D%22"+m_pGlobalVar->curCode+"%22)&sortColumns=BOARD_RANK&sortTypes=1&_=1701002504740";
+ 
+    allData = networkManager.getSync<QByteArray>(QUrl(url));
+
     doc = QJsonDocument::fromJson(allData, &jsonError);
     if (jsonError.error == QJsonParseError::NoError)
     {
         QJsonObject jsonObject = doc.object();
         QJsonArray data=jsonObject.value("result").toObject().value("data").toArray();
         int size=f10QList.size();
-        for (int i = 0; i < data.size(); ++i)
+        QJsonValue value;
+        QVariantMap ceilMap;
+        int code;
+        QString s;
+        int nSize=data.size();
+        for (int i = 0; i < nSize; ++i)
         {
-            QJsonValue value = data.at(i);
-            QVariantMap ceilMap = value.toVariant().toMap();
+            value = data.at(i);
+            ceilMap = value.toVariant().toMap();
             QStringList dataList;
-            int code=ceilMap.value("BOARD_CODE").toInt();
-            QString s=QString::number(code);
+            code=ceilMap.value("BOARD_CODE").toInt();
+             s=QString::number(code);
             if (code<1000)
                 s="0"+s;
             s="BK"+s;
@@ -84,7 +100,11 @@ void GetF10Info::getMainIndex()
 {
     f10QList.clear();
     QByteArray allData;
-    GlobalVar::getData(allData,1,QUrl("https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code="+GlobalVar::getStockSymbol()));
+ 
+    QString url="https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code="+m_pGlobalVar->getStockSymbol();
+    NetworkManager networkManager;
+    allData = networkManager.getSync<QByteArray>(QUrl(url));
+
     QStringList lableList={"EPSJB", "EPSKCJB", "EPSXS","BPS", "MGZBGJ", "MGWFPLR","MGJYXJJE",
                            "TOTALOPERATEREVE","MLR" ,"PARENTNETPROFIT","KCFJCXSYJLR","TOTALOPERATEREVETZ",
                            "PARENTNETPROFITTZ","TOTALDEPOSITS","KCFJCXSYJLRTZ", "YYZSRGDHBZC",
@@ -111,20 +131,24 @@ void GetF10Info::mainBusinessComposition()
 {
     f10QList.clear();
     QByteArray allData;
-    GlobalVar::getData(allData,1,QUrl("http://f10.emoney.cn/f10/zygc/"+GlobalVar::curCode));
+    
+    QString url ="http://f10.emoney.cn/f10/zygc/"+m_pGlobalVar->curCode;
+    NetworkManager networkManager;
+    allData = networkManager.getSync<QByteArray>(QUrl(url));
+
     QString html=QTextCodec::codecForName("GBK")->toUnicode(allData);
     QPair<QString, QString> pair;
-    QString remainder=GlobalVar::peelStr(html,"class=\"swlab_t\"","-1");
-    pair=GlobalVar::cutStr(remainder,"<ul","</ul>");
+    QString remainder=m_pGlobalVar->peelStr(html,"class=\"swlab_t\"","-1");
+    pair=m_pGlobalVar->cutStr(remainder,"<ul","</ul>");
     QString content=pair.first;
     remainder=pair.second;
     QString row;
     QStringList colName;
-    GlobalVar::getAllContent(content,colName,"<text");
+    m_pGlobalVar->getAllContent(content,colName,"<text");
     int m=0;
     while(1)
     {
-        pair=GlobalVar::cutStr(remainder,"<table","</table>");
+        pair=m_pGlobalVar->cutStr(remainder,"<table","</table>");
         content=pair.first;
         remainder=pair.second;
         while(1)
@@ -132,19 +156,19 @@ void GetF10Info::mainBusinessComposition()
             if (content.indexOf("<tr")==-1)
                 break;
             QString s;
-            pair=GlobalVar::cutStr(content,"<tr","</tr>");
+            pair=m_pGlobalVar->cutStr(content,"<tr","</tr>");
             QStringList rowList;
             if (pair.first.contains("rowspan"))
             {
-                s=GlobalVar::peelStr(pair.first,"<th","-1");
-                row=GlobalVar::getContent(s);
+                s=m_pGlobalVar->peelStr(pair.first,"<th","-1");
+                row=m_pGlobalVar->getContent(s);
             }
             else if(pair.first.contains("colspan"))
             {
                 colList={"报告期","分类方向"};
-                pair=GlobalVar::cutStr(content,"<tr","</tr>");
+                pair=m_pGlobalVar->cutStr(content,"<tr","</tr>");
                 s=pair.first;
-                GlobalVar::getAllContent(s,colList,"<th");
+                m_pGlobalVar->getAllContent(s,colList,"<th");
                 colList[2]="分类";
 //                qDebug()<<bussinessColList;
                 content=pair.second;
@@ -152,7 +176,7 @@ void GetF10Info::mainBusinessComposition()
             }
             rowList<<colName[m]<<row;
             s=pair.first;
-            GlobalVar::getAllContent(s,rowList,"<td");
+            m_pGlobalVar->getAllContent(s,rowList,"<td");
             content=pair.second;
             f10QList.append(rowList);
 //            qDebug()<<rowList;
@@ -312,7 +336,8 @@ void GetF10Info::getData(const QByteArray &allData,QStringList key,QStringList v
         col={"基本指标"};
         for (int i=0;i<len;++i)
             cowList[i]<<value[i];
-        for (int i = 0; i < data.size(); ++i)
+        int nSize = data.size();
+        for (int i = 0; i < nSize; ++i)
         {
             QJsonValue value = data.at(i);
             QVariantMap ceilMap = value.toVariant().toMap();
@@ -321,7 +346,7 @@ void GetF10Info::getData(const QByteArray &allData,QStringList key,QStringList v
             {
                 QString s="";
                 if (not ceilMap.value(key[j]).isNull())
-                    s=GlobalVar::format_conversion(ceilMap.value(key[j]).toFloat());
+                    s=format_conversion(ceilMap.value(key[j]).toFloat());
                 cowList[j]<<s;
             }
         }
@@ -334,26 +359,35 @@ void GetF10Info::getAllData(QStringList key, QStringList value,QString url)
 {
     f10QList.clear();
     QStringList t[100];
-    for (int i=0;i<value.count();++i)
+    int nCount =value.count();
+    for (int i=0;i<nCount;++i)
         t[i]<<value[i];
     QStringList c;
     colList={"基本指标"};
     calcPeriod();
-    for (int k=0;k<period.count();++k)
+    QList<QStringList> temp;
+    QByteArray allData;
+    NetworkManager networkManager;
+    QString qUrl;
+    nCount=period.count();
+    for (int k=0;k<nCount;++k)
     {
-        QList<QStringList> temp;
-        QByteArray allData;
-        GlobalVar::getData(allData,1,QUrl(url+period[k]+"&code="+GlobalVar::getStockSymbol()));
+
+        qUrl= url+period[k]+"&code="+m_pGlobalVar->getStockSymbol();
+        allData = networkManager.getSync<QByteArray>(QUrl(qUrl));
+
         getData(allData,key,value,c,temp);
         c.remove(0);
         colList<<c;
-        for (int i=0;i<temp.count();++i)
+        int nCount=temp.count();
+        for (int i=0;i<nCount;++i)
         {
             for (int j=1;j<temp.at(i).count();++j)
                 t[i]<<temp.at(i)[j];
         }
     }
-    for (int i=0;i<value.count();++i)
+    nCount=value.count();
+    for (int i=0;i<nCount;++i)
         f10QList.append(t[i]);
 }
 
@@ -361,10 +395,13 @@ void GetF10Info::calcPeriod()
 {
     period.clear();
     QByteArray allData;
-    if (GlobalVar::curName.contains("证券"))
+    if (m_pGlobalVar->curName.contains("证券"))
         companyType="1";
-    QString url="https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/zcfzbDateAjaxNew?companyType="+companyType+"&reportDateType=0&code="+GlobalVar::getStockSymbol();
-    GlobalVar::getData(allData,1,QUrl(url));
+    QString url="https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/zcfzbDateAjaxNew?companyType="+companyType+"&reportDateType=0&code="+m_pGlobalVar->getStockSymbol();
+
+    NetworkManager networkManager;
+    allData = networkManager.getSync<QByteArray>(QUrl(url));
+
     QString html=QString(allData);
     QString s="REPORT_DATE\" : \"";
     QString date=html.mid(html.indexOf(s)+s.length(),10);

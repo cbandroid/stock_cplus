@@ -1,9 +1,10 @@
 #include "globalvar.h"
 #include "searchstock.h"
+#include "NetworkManager.h"
 
-
-SearchStock::SearchStock()
+SearchStock::SearchStock(GlobalVar *pGlobalVar)
 {
+    m_pGlobalVar =pGlobalVar;
 //    naManager = new QNetworkAccessManager(this);
     searchCodeLine=new QLineEdit(this);
     searchCodeLine->setStyleSheet("background-color: rgb(211, 211, 211);");
@@ -15,193 +16,354 @@ SearchStock::SearchStock()
 void SearchStock::matchInput()
 {
     matchCodeText->clear();
-    GlobalVar::curBlock=0;
+    m_pGlobalVar->curBlock=0;
     QString str=searchCodeLine->text();
     if (not str.isEmpty())
     {
-        QFile digitFile(GlobalVar::currentPath+"/list/digit_list.csv");
+      QStringList Data;
+      bool ok;
+      if (m_pGlobalVar->WhichInterface!=CNMARKET)
+      {
+         QTextCharFormat charFmt=QTextCharFormat();
+         charFmt.setForeground(QColor("black"));
+         matchCodeText->mergeCurrentCharFormat(charFmt);
+         if (m_pGlobalVar->WhichInterface==USMARKET || m_pGlobalVar->WhichInterface==UKMARKET)
+         {
+             QString strUpper=str.toUpper();
+             Data= m_pGlobalVar->CodeNameData;
+             if (!compare(Data,strUpper,0))
+             {
+               Data=m_pGlobalVar->PinYinData;
+               compare(Data,strUpper,2);
+             }
+         }
+         else if (m_pGlobalVar->WhichInterface==HKMARKET)
+         {
+           str.toInt(&ok);
+           if (ok){
+             Data= m_pGlobalVar->CodeNameData;
+             compare(Data,str,0);
+            }
+            else
+            {
+              QString strUpper=str.toUpper();
+              Data=m_pGlobalVar->PinYinData;
+              compare(Data,strUpper,2);
+            }
+         }
+      }
+      else
+      {
+
         QTextCharFormat charFmt=QTextCharFormat();
         charFmt.setForeground(QColor("black"));
         matchCodeText->mergeCurrentCharFormat(charFmt);
-        if (digitFile.open(QIODevice::ReadOnly))
-        {
-            QTextCodec *codec = QTextCodec::codecForName("GBK");
-            QStringList Data=codec->toUnicode(digitFile.readAll()).split("\n",Qt::SkipEmptyParts);
+        QTextCodec *codec;
+        str.toInt(&ok);
+        if (ok){
+          QFile digitFile(m_pGlobalVar->currentPath+"/list/digit_list.csv");
+          if (digitFile.open(QIODevice::ReadOnly))
+          {
+            codec = QTextCodec::codecForName("GBK");
+            Data=codec->toUnicode(digitFile.readAll()).split("\n",Qt::SkipEmptyParts);
             compare(Data,str,0);
+           }
         }
-
-        QString strUpper=str.toUpper();
-        QFile file(GlobalVar::currentPath+"/list/abbreviation_list.csv");
-
-        if (file.open(QIODevice::ReadOnly))
+        else
         {
-            QTextCodec *codec = QTextCodec::codecForName("GBK");
-            QStringList Data=codec->toUnicode(file.readAll()).split("\n",Qt::SkipEmptyParts);
-            compare(Data,strUpper,2);
-        }
+          QString strUpper=str.toUpper();
+          QFile file(m_pGlobalVar->currentPath+"/list/abbreviation_list.csv");
 
-        matchCodeText->moveCursor(QTextCursor::Start);
-        QTextBlockFormat blockFmt=QTextBlockFormat();
-        blockFmt.setBackground(QColor("white"));
-        matchCodeText->textCursor().setBlockFormat(blockFmt);
-        QTextBlock block=matchCodeText->document()->findBlockByNumber(0);
-        matchCodeText->setTextCursor(QTextCursor(block));
-        blockFmt=matchCodeText->textCursor().blockFormat();
-        blockFmt.setBackground(QColor(0, 199, 255));
-        matchCodeText->textCursor().setBlockFormat(blockFmt);
+          if (file.open(QIODevice::ReadOnly))
+          {
+            codec = QTextCodec::codecForName("GBK");
+            Data=codec->toUnicode(file.readAll()).split("\n",Qt::SkipEmptyParts);
+            compare(Data,strUpper,2);
+          }
+        }
+      }
+      matchCodeText->moveCursor(QTextCursor::Start);
+      QTextBlockFormat blockFmt=QTextBlockFormat();
+      blockFmt.setBackground(QColor("white"));
+      matchCodeText->textCursor().setBlockFormat(blockFmt);
+      QTextBlock block=matchCodeText->document()->findBlockByNumber(0);
+      matchCodeText->setTextCursor(QTextCursor(block));
+      blockFmt=matchCodeText->textCursor().blockFormat();
+      blockFmt.setBackground(QColor(0, 199, 255));
+      matchCodeText->textCursor().setBlockFormat(blockFmt);
     }
 }
 
 void SearchStock::searchFinished()
 {
-    QStringList cn=matchCodeText->document()->findBlockByNumber(GlobalVar::curBlock).text().split("   ");
-    GlobalVar::isBoard=false;
-    if (cn.contains(">>> "))
+    QStringList cn=matchCodeText->document()->findBlockByNumber(m_pGlobalVar->curBlock).text().split(" ");
+    m_pGlobalVar->isBoard=false;
+    int cn_len =  cn.count();
+    if (cn.contains(">>> ") or  cn_len< 3)
         return;
-    QString code=cn.at(0).right(6);
-    if (cn.at(2)=="指数")
+    qDebug() << "searchFinished |" << cn.at(1)  <<"| " <<  cn_len <<"|"<< cn.join(" ") << " |" << cn.size();
+    if (cn.size() <3)
+          return;
+    QString strSymbol="";
+    if (m_pGlobalVar->WhichInterface!=CNMARKET)
     {
-        if (code.left(1)=="0")
-            GlobalVar::curCode="1."+code;
-        else if (code.left(1)=="B")
-            GlobalVar::curCode="90."+code;
+        if (m_pGlobalVar->WhichInterface==USMARKET)
+           strSymbol=cn.at(1);
+        else if (m_pGlobalVar->WhichInterface==UKMARKET)
+          strSymbol=cn.at(1);
         else
-            GlobalVar::curCode=code;
-    }
-    else if (cn.at(2)=="板块")
-    {
-        GlobalVar::curBoard=code;
-        GlobalVar::isBoard=true;
-        getBoardData();
+           strSymbol=cn.at(1);
+
+         qDebug() <<" strSymol="<< strSymbol;
+         m_pGlobalVar->curCode=strSymbol;
     }
     else
-        GlobalVar::curCode=code;
-    GlobalVar::curName=cn.at(1);
+    {
+        strSymbol=cn.at(1);//.right(6);
+        if ( cn_len>2 and cn.at(2)=="指数")
+        {
+          if (strSymbol.left(1)=="0")
+            m_pGlobalVar->curCode="1."+strSymbol;
+         else if (strSymbol.left(1)=="B")
+             m_pGlobalVar->curCode="90."+strSymbol;
+          else
+            m_pGlobalVar->curCode=strSymbol;
+        }
+        else if ( cn_len>3 and cn.at(3)=="板块")
+        {
+          m_pGlobalVar->curBoard=strSymbol;
+          m_pGlobalVar->isBoard=true;
+          getBoardData(m_pTableList);
+        }
+        else
+         m_pGlobalVar->curCode=strSymbol;
+    }
+    if (strSymbol.isEmpty())
+          return;
+    if ( cn_len >3)
+     m_pGlobalVar->curName=cn.at(2);
+
+    qDebug() <<" strSymbol="<< strSymbol;
+
     emit showSearch();
     matchCodeText->clear();
 }
 
-void SearchStock::compare(QStringList Data,QString strUpper,int col)
+bool SearchStock::compare(QStringList Data,QString strUpper,int col)
 {
-    int n=Data.count();
+    int num=Data.count();
     QStringList strLine;
     int matchNum=0;
-    int l = 0;
-    int r = n - 1;
+    int mid,l = 0;
+    int r = num - 1;
     int m=0;
-    QString blank="   ";
+    QString blank=" ";
+    QString class_,strSymol;
+    int size;
+    bool result=false;
     while (l <= r)
     {
-        int mid = (l + r) / 2;
+        mid = (l + r) / 2;
         strLine = Data.at(mid).split(",");
-
+        size =  strLine.size();
+        if (col >= size){
+           matchNum=mid;
+           break;
+        }
+       // qDebug() << strLine;
         if(strUpper==strLine.at(col).left(searchCodeLine->text().length()))
         {
             matchNum=mid;
-            QString class_;
-            QString s=strLine.at(0);
-            if (s.right(1)=="G" or s.left(3)=="399" or s.left(3)=="899")
+            result=true;
+            strSymol=strLine.at(0);
+            if (m_pGlobalVar->WhichInterface!=CNMARKET){
+
+                if (m_pGlobalVar->WhichInterface==USMARKET){
+                    class_="美股";
+                    matchCodeText->append(strLine.at(3)+"."+strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                }
+                else if (m_pGlobalVar->WhichInterface==UKMARKET){
+                    class_="英股";
+                    matchCodeText->append(strLine.at(3)+"."+strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                }
+                else{
+                     class_="港股";
+                     matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                }
+            }
+            else
+            {
+             if (strSymol.right(1)=="G" or strSymol.left(3)=="399" or strSymol.left(3)=="899")
                 class_="指数";
-            else if(s.left(1)=="B")
+             else if(strSymol.left(1)=="B")
                 class_="板块";
-            else if(s.left(1)=="6")
+             else if(strSymol.left(1)=="6")
                 class_="上海A股";
-            else if(s.left(1)=="0")
+             else if(strSymol.left(1)=="0")
                 class_="深圳A股";
-            else if(s.left(1)=="8" or s.left(1)=="4")
+             else if(strSymol.left(1)=="8" or strSymol.left(1)=="4")
                 class_="北京A股";
-            else if(s.left(1)=="3")
+             else if(strSymol.left(1)=="3")
                 class_="创业板";
-            matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
-            if (class_=="板块")
-                matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
-            break;
+             matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+            // if (class_=="板块")
+            //     matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
+            }
+			break;
         }
-        else if (strUpper<strLine.at(col).left(searchCodeLine->text().length()))
+        else if ( strUpper<strLine.at(col).left(searchCodeLine->text().length()))
             r = mid - 1;
         else
             l = mid + 1;
     }
+
     for (int i=matchNum-1;i>=0;--i)
     {
-        QStringList strLine = Data.at(i).split(",");
-        QString class_;
-        QString s=strLine.at(0);
-        if (s.right(1)=="G" or s.left(3)=="399")
-            class_="指数";
-        else if(s.left(1)=="B")
-            class_="板块";
-        else if(s.left(1)=="6")
-            class_="上海A股";
-        else if(s.left(1)=="0")
-            class_="深圳A股";
-        else if(s.left(1)=="8" or s.left(1)=="4")
-            class_="北京A股";
-        else if(s.left(1)=="3")
-            class_="创业板";
-        if (strUpper==strLine.at(col).left(searchCodeLine->text().length()))
-        {
-            matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
-            if (class_=="板块")
-                matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
-            m+=1;
-            if (m>100)
+        strLine = Data.at(i).split(",");
+        size =  strLine.size();
+        if (col >= size)
+            break;
+        strSymol=strLine.at(0);
+        if (m_pGlobalVar->WhichInterface!=CNMARKET){
+            if (m_pGlobalVar->WhichInterface==USMARKET)
+                class_="美股";
+            else if (m_pGlobalVar->WhichInterface==UKMARKET)
+                class_="英股";
+            else
+                class_="港股";
+            if ( strUpper==strLine.at(col).left(searchCodeLine->text().length()))
+            {
+                result=true;
+                if (m_pGlobalVar->WhichInterface==HKMARKET)
+                    matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                else
+                    matchCodeText->append(strLine.at(3)+"."+strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+
+                m+=1;
+                if (m>100)
+                    break;
+            }
+            else
                 break;
         }
         else
+        {
+         if (strSymol.right(1)=="G" or strSymol.left(3)=="399")
+            class_="指数";
+         else if(strSymol.left(1)=="B")
+            class_="板块";
+         else if(strSymol.left(1)=="6")
+            class_="上海A股";
+         else if(strSymol.left(1)=="0")
+            class_="深圳A股";
+         else if(strSymol.left(1)=="8" or strSymol.left(1)=="4")
+            class_="北京A股";
+         else if(strSymol.left(1)=="3")
+            class_="创业板";
+         if (strUpper==strLine.at(col).left(searchCodeLine->text().length()))
+         {
+            result=true;
+            matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+            // if (class_=="板块")
+            //     matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
+            m+=1;
+            if (m>100)
+                break;
+         }
+         else
             break;
+        }
     }
-    for (int i=matchNum+1;i<Data.count();++i)
+    for (int i=matchNum+1;i<num;++i)
     {
-        QStringList strLine = Data.at(i).split(",");
-        QString class_;
-        QString s=strLine.at(0);
-        if (s.right(1)=="G" or s.left(3)=="399")
-            class_="指数";
-        else if(s.left(1)=="B")
-            class_="板块";
-        else if(s.left(1)=="6")
-            class_="上海A股";
-        else if(s.left(1)=="0")
-            class_="深圳A股";
-        else if(s.left(1)=="8" or s.left(1)=="4")
-            class_="北京A股";
-        else if(s.left(1)=="3")
-            class_="创业板";
-        if (strUpper==strLine.at(col).left(searchCodeLine->text().length()))
-        {
-            matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
-            if (class_=="板块")
-                matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
-            m+=1;
-            if (m>100)
+        strLine = Data.at(i).split(",");
+        size =  strLine.size();
+        if (col >= size)
+            break;
+        strSymol=strLine.at(0);
+
+        if (m_pGlobalVar->WhichInterface!=CNMARKET){
+            if (m_pGlobalVar->WhichInterface==USMARKET)
+                class_="美股";
+            else if (m_pGlobalVar->WhichInterface==UKMARKET)
+                class_="英股";
+            else
+                class_="港股";
+            if ( strUpper==strLine.at(col).left(searchCodeLine->text().length()))
+            {
+                result=true;
+                if (m_pGlobalVar->WhichInterface==HKMARKET)
+                   matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                else
+                    matchCodeText->append(strLine.at(3)+"."+strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+                m+=1;
+                if (m>100)
+                    break;
+            }
+            else
                 break;
         }
         else
+        {
+         if (strSymol.right(1)=="G" or strSymol.left(3)=="399")
+            class_="指数";
+         else if(strSymol.left(1)=="B")
+            class_="板块";
+         else if(strSymol.left(1)=="6")
+            class_="上海A股";
+         else if(strSymol.left(1)=="0")
+            class_="深圳A股";
+         else if(strSymol.left(1)=="8" or strSymol.left(1)=="4")
+            class_="北京A股";
+         else if(strSymol.left(1)=="3")
+            class_="创业板";
+         if ( strUpper==strLine.at(col).left(searchCodeLine->text().length()))
+         {
+            result=true;
+            matchCodeText->append(strSymol+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+class_);
+            // if (class_=="板块")
+            //     matchCodeText->append(s.mid(0,6)+blank+strLine.at(1)+"("+strLine.at(2)+")"+blank+"指数");
+            m+=1;
+            if (m>100)
+                break;
+         }
+         else
             break;
+        }
     }
+    return result;
 }
 
-void SearchStock::getBoardData()
+void SearchStock::getBoardData(QList<StockInfo> *&pTableList)
 {
+
+    m_pTableList=pTableList;
     QByteArray allData;
-    GlobalVar::getData(allData,2,QUrl("http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=1&fid="+GlobalVar::columns[GlobalVar::curSortNum]+"&fs=b:"+GlobalVar::curBoard+"+f:!50&fields=f2,f3,f5,f6,f8,f9,f12,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667954879297"));
+
+    QString url="http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=1&fid="+m_pGlobalVar->columns[m_pGlobalVar->curSortNum[1]]+"&fs=b:"+m_pGlobalVar->curBoard+"+f:!50&fields=f2,f3,f5,f6,f8,f9,f12,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667954879297";
+    NetworkManager networkManager;
+    allData = networkManager.getSync<QByteArray>(QUrl(url));
+
     if (allData.isEmpty())
         return;
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(allData, &jsonError);
     if (jsonError.error == QJsonParseError::NoError)
     {
-        QList<StockInfo> mTableList;
-        // GlobalVar::mTableList.clear();
+        pTableList->clear();
+
+       // QList<StockInfo> mTableList;
+        // m_pGlobalVar->mTableList.clear();
         QJsonObject jsonObject = doc.object();
         QJsonArray data=jsonObject.value("data").toObject().value("diff").toArray();
-        for (int i = 0; i < data.size(); ++i)
+        QJsonValue value ;
+        QVariantMap ceilMap;
+        int nSize=data.size();
+        StockInfo info;
+        for (int i = 0; i < nSize; ++i)
         {
-            QJsonValue value = data.at(i);
-            QVariantMap ceilMap = value.toVariant().toMap();
-
-            StockInfo info;
+            value = data.at(i);
+            ceilMap = value.toVariant().toMap();  
             info.code = ceilMap.value("f12").toString();
             info.name = ceilMap.value("f14").toString();
             info.close = ceilMap.value("f2").toFloat();
@@ -219,9 +381,9 @@ void SearchStock::getBoardData()
             info.low = ceilMap.value("f16").toFloat();
             info.open=ceilMap.value("f17").toFloat();
             info.preClose=ceilMap.value("f18").toFloat();
-            mTableList.append(info);
+            pTableList->append(info);
         }
-        GlobalVar::mTableList=mTableList;
-    }
-}
 
+    }
+    allData.clear();
+}

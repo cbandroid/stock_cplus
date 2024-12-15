@@ -3,10 +3,12 @@
 #include "globalvar.h"
 #include "jspickstock.h"
 
-JSPickStock::JSPickStock(QDialog *parent)
+JSPickStock::JSPickStock(GlobalVar *pGlobalVar,QList<StockInfo> *&pTableList,QList<StockInfo> *&pTableListCopy,QDialog *parent)
     : QDialog{parent}
 {
-
+    m_pGlobalVar=pGlobalVar;
+    m_pTableList=pTableList;
+    m_pTableListCopy =pTableListCopy;
 }
 
 JSPickStock::~JSPickStock()
@@ -16,7 +18,7 @@ JSPickStock::~JSPickStock()
 
 void JSPickStock::PickStockInterface()
 {
-    if (GlobalVar::WhichInterface!=1)
+    if (m_pGlobalVar->WhichInterface!=CNMARKET)
     {
         QMessageBox::information(this,"提示", "只能选A股或者在主界面", QMessageBox::Ok);
         return;
@@ -40,21 +42,23 @@ void JSPickStock::PickStockInterface()
     QTreeWidget *formulaTree=new QTreeWidget(pickStockWindow);
     formulaTree->setMaximumWidth(250);
     formulaTree->setHeaderLabel(QStringLiteral("选股公式"));
-    QFile file(GlobalVar::currentPath+"/list/formula.f");
-    GlobalVar::formula.clear();
+    QFile file(m_pGlobalVar->currentPath+"/list/formula.f");
+    m_pGlobalVar->formula.clear();
     if (file.open(QFile::ReadWrite))
     {
         QTextCodec *codec = QTextCodec::codecForName("gbk");
         QStringList data=codec->toUnicode(file.readAll()).split(SPLITBACK,Qt::SkipEmptyParts);
-        for (int i=0;i<data.count();++i)
-            GlobalVar::formula.append(data[i].split(SPLITMID));
+        int nCount =data.count();
+        for (int i=0;i<nCount;++i)
+            m_pGlobalVar->formula.append(data[i].split(SPLITMID));
     }
     file.close();
     QTreeWidgetItem *class_ = new QTreeWidgetItem(formulaTree,QStringList("个人"));
     formulaTree->expandAll();
-    for (int i=0;i<GlobalVar::formula.count();++i)
+    int nCount=m_pGlobalVar->formula.count();
+    for (int i=0;i<nCount;++i)
     {
-        QTreeWidgetItem *f=new QTreeWidgetItem(class_,QStringList(GlobalVar::formula[i][0]));
+        QTreeWidgetItem *f=new QTreeWidgetItem(class_,QStringList(m_pGlobalVar->formula[i][0]));
         if (i==0)
         {
             f->setSelected(true);
@@ -84,19 +88,19 @@ void JSPickStock::PickStockInterface()
     {
         QCheckBox *nameBox = new QCheckBox(pickStockWindow);
         nameBox->setText(name[i]);
-        nameBox->setChecked(GlobalVar::areaFlag[i]);
+        nameBox->setChecked(m_pGlobalVar->areaFlag[i]);
         layout2->addWidget(nameBox,4,i+1);
         mButtonGroup->addButton(nameBox);
     }
     QPlainTextEdit *editFormula=new QPlainTextEdit(pickStockWindow);
 //    editFormula->redoAvailable(true);
-    editFormula->setPlainText(GlobalVar::formulaContent);
+    editFormula->setPlainText(m_pGlobalVar->formulaContent);
     editFormula->setStyleSheet("QPlainTextEdit{font:bold 24px;font:bold}");
     editFormula->setMaximumHeight(350);
     layout2->addWidget(editFormula,5,0,11,6);
 
     // QLabel *progress=new QLabel("选股进度:",pickStockWindow);
-    // QLabel *numbers=new QLabel(QString::number(GlobalVar::mTableListCopy.count()),pickStockWindow);
+    // QLabel *numbers=new QLabel(QString::number(m_pGlobalVar->mTableListCopy.count()),pickStockWindow);
     // QProgressBar *progressBar = new QProgressBar(pickStockWindow);
     // layout2->addWidget(progress,16,0);
     // layout2->addWidget(numbers,16,1);
@@ -114,9 +118,9 @@ void JSPickStock::PickStockInterface()
     }
     connect(formulaTree,&QTreeWidget::itemClicked,this,[=](QTreeWidgetItem */*item*/){
         int row=formulaTree->currentIndex().row();
-        nameLine->setText(GlobalVar::formula.at(row)[1]);
-        desText->setText(GlobalVar::formula.at(row)[2]);
-        editFormula->setPlainText(GlobalVar::formula.at(row)[3]);
+        nameLine->setText(m_pGlobalVar->formula.at(row)[1]);
+        desText->setText(m_pGlobalVar->formula.at(row)[2]);
+        editFormula->setPlainText(m_pGlobalVar->formula.at(row)[3]);
     });
     connect(button[2],&QPushButton::clicked,this,[=](){
         formulaTree->blockSignals(true);
@@ -125,12 +129,12 @@ void JSPickStock::PickStockInterface()
         QTreeWidgetItem *c=new QTreeWidgetItem(class_,QStringList(name));
         c->setFlags(c->flags() | Qt::ItemIsEditable);
         formulaTree->setCurrentItem(c);
-        QFile file(GlobalVar::currentPath+"/list/formula.f");
+        QFile file(m_pGlobalVar->currentPath+"/list/formula.f");
         QStringList t;
         if (file.open(QFile::Append))
         {
             t<<name<<""<<""<<"";
-            GlobalVar::formula.append(t);
+            m_pGlobalVar->formula.append(t);
             file.write(t.join(SPLITMID).toLocal8Bit()+SPLITBACK);
         }
         file.close();
@@ -138,71 +142,79 @@ void JSPickStock::PickStockInterface()
     });
     connect(button[3],&QPushButton::clicked,this,[=](){
         int row=formulaTree->currentIndex().row();
-        int r=QMessageBox::information(this,"提示", "确定删除:"+GlobalVar::formula[row][0], QMessageBox::Yes | QMessageBox::No);
+        int r=QMessageBox::information(this,"提示", "确定删除:"+m_pGlobalVar->formula[row][0], QMessageBox::Yes | QMessageBox::No);
         if (r==QMessageBox::Yes)
         {
             delete formulaTree->currentItem();
-            QFile file(GlobalVar::currentPath+"/list/formula.f");
+            QFile file(m_pGlobalVar->currentPath+"/list/formula.f");
             if (file.open(QFile::WriteOnly))
-                for (int i=0;i<GlobalVar::formula.count();++i)
+            {
+                int nCount=m_pGlobalVar->formula.count();
+                for (int i=0;i<nCount;++i)
                 {
                     if (i==row)
                         continue;
-                    file.write(GlobalVar::formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
+                    file.write(m_pGlobalVar->formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
                 }
-            GlobalVar::formula.removeOne(GlobalVar::formula.at(row));
+            }
+            m_pGlobalVar->formula.removeOne(m_pGlobalVar->formula.at(row));
             file.close();
         }
     });
     connect(button[4],&QPushButton::clicked,this,[=](){
         int row=formulaTree->currentIndex().row();
         QStringList t;
-        t<<GlobalVar::formula.at(row)[0]<<nameLine->text()<<desText->toPlainText()<<editFormula->toPlainText();
-        GlobalVar::formula.replace(row,t);
-        QFile file(GlobalVar::currentPath+"/list/formula.f");
-        if (file.open(QFile::WriteOnly))
-            for (int i=0;i<GlobalVar::formula.count();++i)
-                file.write(GlobalVar::formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
+        t<<m_pGlobalVar->formula.at(row)[0]<<nameLine->text()<<desText->toPlainText()<<editFormula->toPlainText();
+        m_pGlobalVar->formula.replace(row,t);
+        QFile file(m_pGlobalVar->currentPath+"/list/formula.f");
+        if (file.open(QFile::WriteOnly)){
+            int nCount=m_pGlobalVar->formula.count();
+            for (int i=0;i<nCount;++i)
+                file.write(m_pGlobalVar->formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
+        }
         file.close();
     });
 //    connect(formulaTree,&QTreeWidget::itemfloatClicked,this,[=](QTreeWidgetItem *item){
-//        GlobalVar::formulaContent=item->text(0);
+//        m_pGlobalVar->formulaContent=item->text(0);
 //    });
     connect(formulaTree,&QTreeWidget::itemChanged,this,[=](QTreeWidgetItem *item){
         int row=formulaTree->currentIndex().row();
         QStringList t;
-        t<<item->text(0)<<GlobalVar::formula.at(row)[1]<<GlobalVar::formula.at(row)[2]<<GlobalVar::formula.at(row)[3];
-        GlobalVar::formula.replace(row,t);
-        QFile file(GlobalVar::currentPath+"/list/formula.f");
-        if (file.open(QFile::WriteOnly))
-            for (int i=0;i<GlobalVar::formula.count();++i)
-                file.write(GlobalVar::formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
+        t<<item->text(0)<<m_pGlobalVar->formula.at(row)[1]<<m_pGlobalVar->formula.at(row)[2]<<m_pGlobalVar->formula.at(row)[3];
+        m_pGlobalVar->formula.replace(row,t);
+        QFile file(m_pGlobalVar->currentPath+"/list/formula.f");
+        if (file.open(QFile::WriteOnly)){
+            int nCount=m_pGlobalVar->formula.count();
+            for (int i=0;i<nCount;++i)
+                file.write(m_pGlobalVar->formula.at(i).join(SPLITMID).toLocal8Bit()+SPLITBACK);
+        }
         file.close();
     });
     connect(editFormula,&QPlainTextEdit::textChanged,editFormula,[=](){
         editFormula->blockSignals(true);
-        GlobalVar::formulaContent=editFormula->toPlainText();
+        m_pGlobalVar->formulaContent=editFormula->toPlainText();
         int post=0;
         QTextCursor cursor = editFormula->textCursor();
         QTextCharFormat fmt;
         fmt.setForeground(QColor("black"));
         cursor.setPosition(0,QTextCursor::MoveAnchor);
-        cursor.setPosition(GlobalVar::formulaContent.size(),QTextCursor::KeepAnchor);
+        cursor.setPosition(m_pGlobalVar->formulaContent.size(),QTextCursor::KeepAnchor);
         cursor.mergeCharFormat(fmt);
-        while((post=GlobalVar::formulaContent.indexOf("(",post))!=-1)
+        while((post=m_pGlobalVar->formulaContent.indexOf("(",post))!=-1)
         {
-            QString t=GlobalVar::formulaContent.mid(post-1,1);
+            QString t=m_pGlobalVar->formulaContent.mid(post-1,1);
             if (t>='A' && t<='Z')
             {
-                int p=GlobalVar::formulaContent.indexOf(")",post)+1;
+                int p=m_pGlobalVar->formulaContent.indexOf(")",post)+1;
                 if (p==0)
                     break;
                 fmt.setForeground(QColor("red"));
-                QString s=GlobalVar::formulaContent.mid(post-1,p-post+1);
+                QString s=m_pGlobalVar->formulaContent.mid(post-1,p-post+1);
                 bool isCon=true;
                 if (t=="D")
                 {
-                    for (int i=2;i<s.length()-1;++i)
+                    int len=s.length()-1;
+                    for (int i=2;i<len;++i)
                     {
                         isCon=false;
                         if ((s.mid(i,1)>="A" && s.mid(i,1)<="Z") ||
@@ -222,7 +234,8 @@ void JSPickStock::PickStockInterface()
                 }
                 else
                 {
-                    for (int i=2;i<s.length()-1;++i)
+                    int len=s.length()-1;
+                    for (int i=2;i<len;++i)
                     {
                         isCon=false;
                         if ((s.mid(i,1)==",") || (s.mid(i,1)>="0" && s.mid(i,1)<="9"))
@@ -251,33 +264,35 @@ void JSPickStock::PickStockInterface()
     connect(mButtonGroup, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(onButtonClicked(QAbstractButton*)));
 
     connect(button[0],&QPushButton::clicked,this,[=](){
-        if (GlobalVar::settings->value("isDownloadK").toString()!=
-                    GlobalVar::curRecentWorkDay(0).toString("yyyy-MM-dd"))
+        if (m_pGlobalVar->settings->value("isDownloadK").toString()!=
+                    m_pGlobalVar->curRecentWorkDay(0).toString("yyyy-MM-dd"))
             QMessageBox::information(this,"提示", "确保数据是最新的", QMessageBox::Ok);
-        JSPickStock* object = new JSPickStock(this);
+        JSPickStock* object = new JSPickStock(m_pGlobalVar, m_pTableList, m_pTableListCopy,this);
         QJSEngine myEngine;
         QJSValue jsObject = myEngine.newQObject(object);
         myEngine.globalObject().setProperty("JS", jsObject);
-        GlobalVar::mTableList.clear();
-        for (int i=0;i<GlobalVar::mTableListCopy.count();++i)
+        //m_pTableList->clear();
+        QJSValue value;
+        int nCount=m_pTableListCopy->count();
+        for (int i=0;i<nCount;++i)
         {
-            if (GlobalVar::areaFlag[4] and (GlobalVar::mTableListCopy.at(i).name.contains("ST") or
-                                            GlobalVar::mTableListCopy.at(i).name.contains("退")))
+            if (m_pGlobalVar->areaFlag[4] and (m_pTableListCopy->at(i).name.contains("ST") or
+                                            m_pTableListCopy->at(i).name.contains("退")))
                 continue;
-            else if (not GlobalVar::areaFlag[0] and GlobalVar::mTableListCopy.at(i).code.left(1)=="6" and
-                    GlobalVar::mTableListCopy.at(i).code.left(3)!="688" )
+            else if (not m_pGlobalVar->areaFlag[0] and m_pTableListCopy->at(i).code.left(1)=="6" and
+                    m_pTableListCopy->at(i).code.left(3)!="688" )
                 continue;
-            else if (not GlobalVar::areaFlag[1] and (GlobalVar::mTableListCopy.at(i).code.left(1)=="0" or
-                                        GlobalVar::mTableListCopy.at(i).code.left(1)=="3"))
+            else if (not m_pGlobalVar->areaFlag[1] and (m_pTableListCopy->at(i).code.left(1)=="0" or
+                                      m_pTableListCopy->at(i).code.left(1)=="3"))
                 continue;
-            else if (not GlobalVar::areaFlag[2] and GlobalVar::mTableListCopy.at(i).code.left(3)=="688")
+            else if (not m_pGlobalVar->areaFlag[2] and m_pTableListCopy->at(i).code.left(3)=="688")
                 continue;
-            else if (not GlobalVar::areaFlag[3] and (GlobalVar::mTableListCopy.at(i).code.left(1)=="4" or
-                                           GlobalVar::mTableListCopy.at(i).code.left(1)=="8"))
+            else if (not m_pGlobalVar->areaFlag[3] and (m_pTableListCopy->at(i).code.left(1)=="4" or
+                                          m_pTableListCopy->at(i).code.left(1)=="8"))
                 continue;
-            GlobalVar::mTableListNum=i;
-            GlobalVar::mCandleListCode=GlobalVar::mTableListCopy.at(i).code;
-            QJSValue value = myEngine.evaluate(replaceFormula(editFormula->toPlainText()));
+            m_pGlobalVar->mTableListNum=i;
+            m_pGlobalVar->mCandleListCode=m_pTableListCopy->at(i).code;
+            value = myEngine.evaluate(replaceFormula(editFormula->toPlainText()));
             if (value.isError())
             {
                 QMessageBox::information(this,"提示", value.property("name").toString()+"\n"+
@@ -287,7 +302,7 @@ void JSPickStock::PickStockInterface()
             }
             if (value.toNumber())
             {
-                GlobalVar::mTableList.append(GlobalVar::mTableListCopy.at(i));
+               m_pTableList->append(m_pTableListCopy->at(i));
             }
         }
         emit updateTableList();
@@ -303,7 +318,7 @@ void JSPickStock::onButtonClicked(QAbstractButton *button)
     {
         if (button->text()==name[i])
         {
-            GlobalVar::areaFlag[i]=not GlobalVar::areaFlag[i];
+            m_pGlobalVar->areaFlag[i]=not m_pGlobalVar->areaFlag[i];
             break;
         }
     }
@@ -311,7 +326,7 @@ void JSPickStock::onButtonClicked(QAbstractButton *button)
 
 float JSPickStock::H()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).high;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).high;
 }
 
 float JSPickStock::H(int day)
@@ -322,20 +337,21 @@ float JSPickStock::H(int day)
 float JSPickStock::H(int startDay, int endDay)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);
         QString s = in.readAll();
         QList<QString> data=s.split("\n",Qt::SkipEmptyParts).toList();
         float h=0.0;
-        for (int i=startDay;i<startDay+endDay;++i)
+        int nDay= startDay+endDay;
+        for (int i=startDay;i<nDay;++i)
         {
             int t=data.count()-1-i;
             if (t<0 or i<0)
@@ -357,7 +373,7 @@ float JSPickStock::H(int startDay, int endDay)
 
 float JSPickStock::L()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).low;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).low;
 }
 
 float JSPickStock::L(int day)
@@ -368,20 +384,21 @@ float JSPickStock::L(int day)
 float JSPickStock::L(int startDay, int endDay)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);
         QString s = in.readAll();
         QList<QString> data=s.split("\n",Qt::SkipEmptyParts).toList();
         float l=100000.0;
-        for (int i=startDay;i<startDay+endDay;++i)
+        int nDay=startDay+endDay;
+        for (int i=startDay;i<nDay;++i)
         {
             int t=data.count()-1-i;
             if (t<0 or i<0)
@@ -403,7 +420,7 @@ float JSPickStock::L(int startDay, int endDay)
 
 float JSPickStock::C()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).close;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).close;
 }
 
 float JSPickStock::C(int day)
@@ -413,12 +430,12 @@ float JSPickStock::C(int day)
 
 float JSPickStock::Y()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).preClose;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).preClose;
 }
 
 float JSPickStock::T()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).turn;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).turn;
 }
 
 float JSPickStock::T(int day)
@@ -429,20 +446,21 @@ float JSPickStock::T(int day)
 float JSPickStock::T(int startDay, int endDay)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);
         QString s = in.readAll();
         QList<QString> data=s.split("\n",Qt::SkipEmptyParts).toList();
         float temp=0;
-        for (int i=startDay;i<startDay+endDay;++i)
+         int nDay= startDay+endDay;
+        for (int i=startDay;i<nDay;++i)
         {
             int t=data.count()-1-i;
             if (t<0 or i<0)
@@ -462,20 +480,21 @@ float JSPickStock::T(int startDay, int endDay)
 float JSPickStock::A(int startDay, int endDay)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);
         QString s = in.readAll();
         QList<QString> data=s.split("\n",Qt::SkipEmptyParts).toList();
         float temp=0;
-        for (int i=startDay;i<startDay+endDay;++i)
+        int nDay= startDay+endDay;
+        for (int i=startDay;i<nDay;++i)
         {
             int t=data.count()-1-i;
             if (t<0 or i<0)
@@ -486,7 +505,7 @@ float JSPickStock::A(int startDay, int endDay)
             temp+=data.at(t).split(",",Qt::SkipEmptyParts).toList()[2].toFloat();
         }
         file.close();
-//        qDebug()<<GlobalVar::mCandleListCode<<temp/endDay;
+//        qDebug()<<m_pGlobalVar->mCandleListCode<<temp/endDay;
         return temp/endDay;
     }
     file.close();
@@ -495,7 +514,7 @@ float JSPickStock::A(int startDay, int endDay)
 
 float JSPickStock::M()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).volume;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).volume;
 }
 
 float JSPickStock::M(int day)
@@ -506,20 +525,21 @@ float JSPickStock::M(int day)
 float JSPickStock::M(int startDay, int endDay)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);
         QString s = in.readAll();
         QList<QString> data=s.split("\n",Qt::SkipEmptyParts).toList();
         float temp=0;
-        for (int i=startDay;i<startDay+endDay;++i)
+        int nDay= startDay+endDay;
+        for (int i=startDay;i<nDay;++i)
         {
             int t=data.count()-1-i;
             if (t<0 or i<0)
@@ -538,7 +558,7 @@ float JSPickStock::M(int startDay, int endDay)
 
 float JSPickStock::V()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).totalValue;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).totalValue;
 }
 
 float JSPickStock::D(float f)
@@ -548,7 +568,7 @@ float JSPickStock::D(float f)
 
 float JSPickStock::P()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).pctChg;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).pctChg;
 }
 
 float JSPickStock::P(int day)
@@ -558,7 +578,7 @@ float JSPickStock::P(int day)
 
 float JSPickStock::O()
 {
-    return GlobalVar::mTableListCopy.at(GlobalVar::mTableListNum).open;
+    return m_pTableListCopy->at(m_pGlobalVar->mTableListNum).open;
 }
 
 float JSPickStock::O(int day)
@@ -569,13 +589,13 @@ float JSPickStock::O(int day)
 float JSPickStock::getData(int day, int column)
 {
     QString path;
-    if (GlobalVar::mCandleListCode.left(1)=="6")
-        path="/list/data/sh/"+GlobalVar::mCandleListCode+".csv";
-    else if (GlobalVar::mCandleListCode.left(1)=="8" or GlobalVar::mCandleListCode.left(1)=="4")
-        path="/list/data/bj/"+GlobalVar::mCandleListCode+".csv";
+    if (m_pGlobalVar->mCandleListCode.left(1)=="6")
+        path="/list/data/sh/"+m_pGlobalVar->mCandleListCode+".csv";
+    else if (m_pGlobalVar->mCandleListCode.left(1)=="8" or m_pGlobalVar->mCandleListCode.left(1)=="4")
+        path="/list/data/bj/"+m_pGlobalVar->mCandleListCode+".csv";
     else
-        path="/list/data/sz/"+GlobalVar::mCandleListCode+".csv";
-    QFile file(GlobalVar::currentPath+path);
+        path="/list/data/sz/"+m_pGlobalVar->mCandleListCode+".csv";
+    QFile file(m_pGlobalVar->currentPath+path);
     if (file.open(QFile::ReadOnly) and file.size()>0)
     {
         QTextStream in(&file);

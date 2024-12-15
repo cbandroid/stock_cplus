@@ -20,33 +20,43 @@
 #include <QDir>
 
 #include <QThreadPool>
+#include "stockinfo.h"
+
+class GlobalVar;
 
 class RequestsToCsv : public QDialog
 {
     Q_OBJECT
 public:
-    explicit RequestsToCsv(QDialog *parent = nullptr);
-
+    explicit RequestsToCsv(GlobalVar *pGlobalVar,QList<StockInfo> *&pTableList,QDialog *parent = nullptr);
+    ~RequestsToCsv();
     bool getIndexList();
     bool getPlateList();
     void dealWithPlateList(QList<QStringList> &list,const QByteArray &allData);
     QString getStockList();
-    void dealWithAllList();
-    void downStockIndexPlateInfo();
-    void downloadAllStockK();
+     bool dealWithAllList();
+    bool downStockIndexPlateInfo();
+    void downloadAllStockK(QList<StockInfo> *&pTableListCopy);
     Q_INVOKABLE void setText();
    
 //    void baoShareStockK();
     QThreadPool threadPool;
-    QDialog *progressBarWindow = new QDialog();
-    QPushButton *stopBtn = new QPushButton("终止下载",progressBarWindow);
-    QLabel *numLine = new QLabel(progressBarWindow);
-    QProgressBar *progressBar = new QProgressBar(progressBarWindow);
-    QString CNToEL(const QString &cnstr);
-    int downloadedNums=0;
-    QString curDate;
-    bool isDownload=false;
+    QDialog *progressBarWindowDlg;
+    QPushButton *stopBtn ;
+    QLabel *lblnumLine ;
+    QProgressBar *progressBar ;
 
+    int downloadedNums;
+    QString curDate;
+    bool isDownload;
+private:
+    static QDialog *promptDlg;
+    static QTimer *qTimer;
+    QList<StockInfo> *m_pTableListCopy;
+    GlobalVar *m_pGlobalVar;
+    void isDirExist(QString fullPath);
+    void getEastStockList();
+    static void OnAccept(); // override;
 signals:
 
 };

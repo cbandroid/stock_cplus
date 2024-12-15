@@ -1,9 +1,11 @@
+#include "utilityex.h"
 #include "globalvar.h"
 #include "modelfundflow.h"
 
-ModelFundFlow::ModelFundFlow(QObject *parent)
+ModelFundFlow::ModelFundFlow(GlobalVar *pGlobalVar,QObject *parent)
     : QAbstractTableModel{parent}
 {
+    m_pGlobalVar=pGlobalVar;
     tableHeader<<"名称"<<"涨跌幅"<<"主入最大股"<<"主力净额"<<"占比"<<"超大单净额"<<"占比"<<"大单净额"
                 <<"占比"<<"中单净额"<<"占比"<<"小单净额"<<"占比"<<"CODE";
 }
@@ -63,17 +65,17 @@ QVariant ModelFundFlow::data(const QModelIndex &index, int role) const
         switch(index.column())
         {
         case 0: return m_modelData.at(row)[0];
-        case 1: return QString::number(m_modelData.at(row)[1].toFloat(),'f',2)+"%";
-        case 3: return GlobalVar::format_conversion(m_modelData.at(row)[2].toFloat());
-        case 4: return QString::number(m_modelData.at(row)[3].toFloat(),'f',2)+"%";
-        case 5: return GlobalVar::format_conversion(m_modelData.at(row)[4].toFloat());
-        case 6: return QString::number(m_modelData.at(row)[5].toFloat(),'f',2)+"%";
-        case 7: return GlobalVar::format_conversion(m_modelData.at(row)[6].toFloat());
-        case 8: return QString::number(m_modelData.at(row)[7].toFloat(),'f',2)+"%";
-        case 9: return GlobalVar::format_conversion(m_modelData.at(row)[8].toFloat());
-        case 10: return QString::number(m_modelData.at(row)[9].toFloat(),'f',2)+"%";
-        case 11: return GlobalVar::format_conversion(m_modelData.at(row)[10].toFloat());
-        case 12: return QString::number(m_modelData.at(row)[11].toFloat(),'f',2)+"%";
+        case 1: return FormatNumber(m_modelData.at(row)[1].toFloat(),2,"%");
+        case 3: return format_conversion(m_modelData.at(row)[2].toFloat());
+        case 4: return FormatNumber(m_modelData.at(row)[3].toFloat(),2,"%");
+        case 5: return format_conversion(m_modelData.at(row)[4].toFloat());
+        case 6: return FormatNumber(m_modelData.at(row)[5].toFloat(),2,"%");
+        case 7: return format_conversion(m_modelData.at(row)[6].toFloat());
+        case 8: return FormatNumber(m_modelData.at(row)[7].toFloat(),2,"%");
+        case 9: return format_conversion(m_modelData.at(row)[8].toFloat());
+        case 10: return FormatNumber(m_modelData.at(row)[9].toFloat(),2,"%");
+        case 11: return format_conversion(m_modelData.at(row)[10].toFloat());
+        case 12: return FormatNumber(m_modelData.at(row)[11].toFloat(),2,"%");
         case 13: return m_modelData.at(row)[13];
         case 2: return m_modelData.at(row)[12];
         }
@@ -84,7 +86,7 @@ QVariant ModelFundFlow::data(const QModelIndex &index, int role) const
         switch(index.column())
         {
         case 0:
-            return QColor(72,61,139);
+            return QColor(0,0,0); //QColor(72,61,139);
         case 1:
             if (m_modelData.at(row)[1].toFloat()>0)
                 return QColor(Qt::red);

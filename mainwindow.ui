@@ -35,7 +35,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>26</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu">
@@ -51,6 +51,7 @@
     <addaction name="DLAllStockK"/>
     <addaction name="DLStockInfo"/>
     <addaction name="newsReport"/>
+    <addaction name="tts_setting"/>
     <addaction name="exit"/>
    </widget>
    <widget class="QMenu" name="menu_2">
@@ -103,6 +104,7 @@
     </property>
     <addaction name="login"/>
     <addaction name="commonTrade"/>
+    <addaction name="actionWeb_Trade"/>
    </widget>
    <addaction name="menu"/>
    <addaction name="menu_2"/>
@@ -306,6 +308,20 @@
    </property>
    <property name="text">
     <string>英股</string>
+   </property>
+  </action>
+  <action name="tts_setting">
+   <property name="icon">
+    <iconset theme="audio-volume-high" resource="resources.qrc">
+     <normaloff>:/new/png/png/report.png</normaloff>:/new/png/png/report.png</iconset>
+   </property>
+   <property name="text">
+    <string>语音设置</string>
+   </property>
+  </action>
+  <action name="actionWeb_Trade">
+   <property name="text">
+    <string>东方财富交易</string>
    </property>
   </action>
  </widget>

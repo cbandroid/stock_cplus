@@ -3,12 +3,13 @@
 
 #include <QAbstractTableModel>
 #include <qfont.h>
+class GlobalVar;
 
 class ModelFundFlow : public QAbstractTableModel
 {
     Q_OBJECT
 public:
-    explicit ModelFundFlow(QObject *parent = nullptr);
+    explicit ModelFundFlow(GlobalVar *pGlobalVar,QObject *parent = nullptr);
     void setModelData(const QList<QStringList> &data,bool forced);
     // Basic functionality:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -20,6 +21,7 @@ public:
 private:
     //    QStringList tableList;
     QList<QStringList> m_modelData;
+    GlobalVar *m_pGlobalVar;
 };
 
 #endif // MODELFUNDFLOW_H

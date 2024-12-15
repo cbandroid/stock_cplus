@@ -5,11 +5,13 @@
 #include <QRunnable>
 #include <QString>
 #include <QFile>
+#include "stockinfo.h"
+class GlobalVar;
 
 class DownloadTask : public QRunnable
 {
 public:
-    explicit DownloadTask(QObject *obj);
+    explicit DownloadTask(GlobalVar *pGlobalVar,QList<StockInfo> *pTableList,QObject *obj);
     int nums;
     QString curDate;
     QString endDate;
@@ -21,6 +23,8 @@ public:
     void downloadK();
 private:
     QObject * m_pObj = nullptr;
+    QList<StockInfo> *m_pTableList;
+    GlobalVar *m_pGlobalVar;
 };
 
 

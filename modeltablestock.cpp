@@ -1,15 +1,21 @@
+#include "utilityex.h"
 #include "globalvar.h"
 #include "modeltablestock.h"
 
-ModelTableStock::ModelTableStock(QObject *parent)
+ModelTableStock::ModelTableStock(GlobalVar *pGlobalVar,QStringList *&pMyStockCode,QObject *parent)
     : QAbstractTableModel(parent)
 {
+    m_pGlobalVar=pGlobalVar;
+    m_pMyStockCode=pMyStockCode;
+    mark=true;
+    myself=false;
     tableHeader<<"代码"<<"名称"<<"涨速"<<"涨跌幅"<<"最新价"<<"换手率"<<"成交额"<<"总市值"<<"市盈率"<<"流通市值"<<"今年"<<"60日"<<"成交量"<< "最高"<< "最低"<< "今开"<<"昨收";
 }
 
-void ModelTableStock::setModelData(const QList<StockInfo> &data,bool forced,bool marking)
+void ModelTableStock::setModelData(const QList<StockInfo> &data,bool forced,bool marking,bool selfSymbol)
 {
     mark=marking;
+    myself = selfSymbol;
     if (m_modelData.size()!=data.size() or forced)
     {
         beginResetModel();
@@ -65,27 +71,32 @@ QVariant ModelTableStock::data(const QModelIndex &index, int role) const
         {
         case 0: return m_modelData.at(row).code;
         case 1: return m_modelData.at(row).name;
-        case 2: return QString::number(m_modelData.at(row).velocity,'f',2);
-        case 3: return GlobalVar::format_conversion(m_modelData.at(row).pctChg)+"%";
+        case 2: return FormatNumber(m_modelData.at(row).velocity,2,"");
+        case 3: {
+            if (m_modelData.at(row).pctChg!=0)
+              return format_conversion(m_modelData.at(row).pctChg)+"%";
+            else
+                return ("--");
+        }
         case 4:
         {
             int d=2;
-            if (GlobalVar::WhichInterface==6 or GlobalVar::WhichInterface==2)
+            if (m_pGlobalVar->WhichInterface==UKMARKET or m_pGlobalVar->WhichInterface==HKMARKET)
                 d=3;
-            return QString::number(m_modelData.at(row).close,'f',d);
+            return FormatNumber(m_modelData.at(row).close,d,"");
         }
         case 5: return m_modelData.at(row).turn;
-        case 6: return GlobalVar::format_conversion(m_modelData.at(row).amount);
-        case 7: return GlobalVar::format_conversion(m_modelData.at(row).totalValue);
-        case 9: return GlobalVar::format_conversion(m_modelData.at(row).circulatedValue);
-        case 8: return QString::number(m_modelData.at(row).pe,'f',2);
-        case 10: return QString::number(m_modelData.at(row).pctYear,'f',2)+"%";
-        case 11: return QString::number(m_modelData.at(row).pctSixty,'f',2)+"%";
-        case 12: return GlobalVar::format_conversion(m_modelData.at(row).volume);
-        case 13: return QString::number(m_modelData.at(row).high,'f',2);
-        case 14: return QString::number(m_modelData.at(row).low,'f',2);
-        case 15: return QString::number(m_modelData.at(row).open,'f',2);
-        case 16: return QString::number(m_modelData.at(row).preClose,'f',2);
+        case 6: return format_conversion(m_modelData.at(row).amount);
+        case 7: return format_conversion(m_modelData.at(row).totalValue);
+        case 9: return format_conversion(m_modelData.at(row).circulatedValue);
+        case 8: return FormatNumber(m_modelData.at(row).pe,2,"");
+        case 10: return FormatNumber(m_modelData.at(row).pctYear,2,"%");
+        case 11: return FormatNumber(m_modelData.at(row).pctSixty,2,"%");
+        case 12: return format_conversion(m_modelData.at(row).volume);
+        case 13: return FormatNumber(m_modelData.at(row).high,2,"");
+        case 14: return FormatNumber(m_modelData.at(row).low,2,"");
+        case 15: return FormatNumber(m_modelData.at(row).open,2,"");
+        case 16: return FormatNumber(m_modelData.at(row).preClose,2,"");
         }
     }
     else if (role == Qt::ForegroundRole)
@@ -94,17 +105,31 @@ QVariant ModelTableStock::data(const QModelIndex &index, int role) const
         switch(index.column())
         {
         case 0:
-            return QColor(128,128,0);
+        return QColor(0, 0, 0); //QColor(128,128,0);
         case 1:
-            if (mark)
+            if (mark and not myself)
             {
-                for (int i=0;i<GlobalVar::mMyStockCode.count();++i)
+                int nCount=m_pMyStockCode->count();
+                /*int mid,l = 0;
+                int r = nCount - 1;
+                while (l <= r)
                 {
-                    if (m_modelData.at(row).code==GlobalVar::mMyStockCode[i])
+                    mid = (l + r) / 2;
+                    if (m_modelData.at(row).code==m_pGlobalVar->mMyStockCode[mid])
+                        return QColor(255,140,0);
+                    else if (m_pGlobalVar->mMyStockCode[mid]> m_modelData.at(row).code)
+                        r = mid - 1;
+                    else
+                        l = mid + 1;
+                }*/
+                for (int i=0;i<nCount;++i)
+                {
+                    if (m_modelData.at(row).code== m_pMyStockCode->at(i))
                         return QColor(255,140,0);
                 }
+
             }
-            return QColor(72,61,139);
+            return QColor(0,0,0); // QColor(72,61,139);
         case 2:
             if (m_modelData.at(row).velocity>= 2)
                 return QColor(153, 0, 153);

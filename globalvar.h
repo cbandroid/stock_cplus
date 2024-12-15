@@ -7,6 +7,8 @@
 #include <QSettings>
 #include "stockinfo.h"
 #include <QPalette>
+#include <QSharedPointer>
+#include <QSharedDataPointer>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
@@ -17,103 +19,116 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <QCoreApplication>
+#include "include\enums.h"
+
 #define  CNMARKET  1
 #define  HKMARKET  2
 #define  USMARKET  5
 #define  UKMARKET  6
 
-#define  FUNDMARKET  4
+#define  FUNDFLOW  4
+
+enum CANCLICK
+{
+    NORMALCLICK=0,
+    CNCLICK=1,
+    OTHERCLICK=-1,
+    FUNDFLOWCLICK=2
+};
+
+typedef void (*Callback)(QNetworkReply *);
+typedef void (*Pfn)();
+
+class  CTechnique;
 
 class GlobalVar
 {
 public:
     GlobalVar();
-    static bool isWorkDay(QDateTime curTime);
-    static bool isZhWorkDay(QDateTime curTime,int select);
-    static QDateTime curRecentWorkDay(int select);
-    static bool isZhMarketDay(QDateTime curTime);
-    static bool isUSMarketDay(QDateTime curTime);
-    static bool isUKMarketDay(QDateTime curTime);
-    static bool isHKMarketDay(QDateTime curTime);
-    static bool getVacation();
-    static QString getComCode();
-    static QString getStockSymbol();
-    static void sortByColumn(QList<StockInfo> *mList,int column,bool is_asc);
-    static QString getCookies(QString url);
-    static void getData(QByteArray &allData,float timeOut,QNetworkRequest requests);
-    static void getData(QByteArray &allData,float timeOut,const QUrl &url);
-    static void postData(const QByteArray &postArray,QByteArray &allData, float timeOut, const QUrl &url);
-    static QString format_conversion(float data);
-//    static QString format_conversion(int data);
-    static QString peelStr(const QString &s,QString begin,QString end);
-    static QPair<QString, QString> cutStr(const QString &s,QString begin,QString end);
-    static QString getContent(const QString &s);
-    static QString getAttributeContent(const QString &s,QString attribute,QString symbol);
-    static void getAllContent(QString &content,QStringList &strList,QString begin);
-    static bool isInt(QString s);
-    static StockInfo findStock(QString code);
-    static int setRound();
+    QDateTime  GetLatestTradeTime(QDateTime tmNow ) const;
+    bool isZhWorkDay(QDateTime curTime,int select) const;
+    QDateTime curRecentWorkDay(int select) const;
+    QDateTime curWorkDay() const;
+    bool isZhMarketDay(QDateTime curTime) const;
+    bool isUSMarketDay(QDateTime curTime) const;
+    bool isUKMarketDay(QDateTime curTime) const;
+    bool isHKMarketDay(QDateTime curTime) const;
 
-    static QString curCode;
-    static bool isBoard;
-    static QString curBoard;
-    static QString curName;
-    static QString EPSReportDate;
-    static QString PEName;
-//    static QStringList tableHeader;
-    static float preClose;
-    static float hisPreClose;
-    static int WhichInterface;
-    static bool isKState;
-    static bool isUsZhStock;
-    static QString circle_green_SheetStyle;
-    static QString circle_red_SheetStyle;
-    static QSettings *settings;
-//    static ModelTableStock *m_tableModel;
-//    static ModelTableStock *m_risingSpeedModel;
-//    static ModelTableStock *m_myStockModel;
-//    static ModelTimeShare *m_timeShareTickModel;
-    static QList<StockInfo> mTableList;
-    static QList<StockInfo> mTableListCopy;
-    static QList<StockInfo> mRisingSpeedList;
-    static QList<StockInfo> mMyStockList;
-    static QList<QStringList> mFundFlowList;
-    static QStringList mMyStockCode;
-    static QList<IndexInfo> mIndexList;
-    static QList<timeShareTickInfo> mTimeShareTickList;
-    static QList<timeShareChartInfo> mTimeShareChartList;
-    static QList<timeShareChartInfo> mHisTimeShareChartList;
-    static QList<candleChartInfo> mCandleChartList;
-    static bool timeOutFlag[10];
-    static int KRange;
-    static float timeShareHighLowPoint[5];
-//    static float candleHighLowPoint[5];
-    static float buySellPrice[10];
-    static float buySellNum[10];
-    static float baseInfoData[14];
-    static int curSortNum;
-    static QString columns[17];
-    static bool is_asc;
-    static QPalette pRed;
-    static QPalette pGreen;
-    static QPalette pBlack;
-    static QPalette pBlue;
-    static QPalette pWhite;
-    static int upNums[4];
-    static int downNums[4];
-    static int trendsTotal;
-    static bool isSayNews;
-    static float speechrate;
-    static int curBlock;
-    static QString currentPath;
-    static int offsetEnd;
-    static int offsetLocal;
-    static bool areaFlag[5];
-    static QString formulaContent;
-    static int mTableListNum;
-    static QString mCandleListCode;
-    static QList<QStringList> formula;
-    static QList<QStringList> annoucementList;
+    bool isTradeTime(QDateTime curTime,int  nDelta=120) const;
+
+    bool getVacation() const;
+    QString getComCode() const;
+    QString getStockSymbol() const;
+
+    QString getCookies(QString url);
+
+
+    QString peelStr(const QString &s,QString begin,QString end) const;
+    QPair<QString, QString> cutStr(const QString &s,QString begin,QString end) const;
+    QString getContent(const QString &s);
+    QString getAttributeContent(const QString &s,QString attribute,QString symbol);
+    void getAllContent(QString &content,QStringList &strList,QString begin) const;
+    bool isInt(QString s) const;
+
+    int setRound();
+
+    QString curCode;
+    volatile bool isBoard;
+
+    QString curBoard;
+    QString curName;
+    QString EPSReportDate;
+    QString PEName;
+
+    float preClose;
+    float hisPreClose;
+    volatile int WhichInterface;
+    volatile bool isKState;
+    volatile bool isUsZhStock;
+
+    QSettings *settings;
+
+    int KRange;
+    float timeShareHighLowPoint[5];
+
+    float buySellPrice[10];
+    float buySellNum[10];
+    float baseInfoData[14];
+    int curSortNum[4];
+    QString columns[17];
+    bool is_asc[4];
+    QPalette pRed;
+    QPalette pGreen;
+    QPalette pBlack;
+    QPalette pBlue;
+    QPalette pWhite;
+    int upNums[4];
+    int downNums[4];
+    int trendsTotal;
+    volatile bool isSayNews;
+    float speechrate;
+    int curBlock;
+    QString currentPath;
+    int offsetEnd;
+    int offsetLocal;
+    bool areaFlag[5];
+    QString formulaContent;
+    int mTableListNum;
+    QString mCandleListCode;
+    QList<QStringList> formula;
+    QList<QStringList> annoucementList;
+    
+    CTechnique *pMainTech;
+    CTechnique *pSubTech;
+    
+    QStringList CodeNameData;
+    QStringList PinYinData;
+
+
+protected:
+    QByteArray replyResult;
+    QByteArray replyData;
+
 };
 
 inline int GlobalVar::setRound()

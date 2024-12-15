@@ -1,10 +1,12 @@
+#include "utilityex.h"
 #include "globalvar.h"
 #include "modeltimeshare.h"
 
 
-ModelTimeShare::ModelTimeShare(QObject *parent)
+ModelTimeShare::ModelTimeShare(GlobalVar *pGlobalVar,QObject *parent)
     : QAbstractTableModel(parent)
 {
+    m_pGlobalVar=pGlobalVar;
 }
 
 void ModelTimeShare::setModelData(const QList<timeShareTickInfo> &data)
@@ -44,8 +46,8 @@ QVariant ModelTimeShare::data(const QModelIndex &index, int role) const
         case 0: return m_modelData.at(row).time;
         case 1:
             {
-            int d=GlobalVar::setRound();
-            return QString::number(m_modelData.at(row).price,'f',d);
+            int d=m_pGlobalVar->setRound();
+            return FormatNumber(m_modelData.at(row).price,d,"");
             }
         case 2: return m_modelData.at(row).nums;
         case 3:
@@ -54,7 +56,10 @@ QVariant ModelTimeShare::data(const QModelIndex &index, int role) const
             else if (m_modelData.at(row).direct==2)
                 return "B";
             return "";
-        case 4: return m_modelData.at(row).tick;
+        case 4:
+            if (m_modelData.at(row).tick==0)
+                return "--";
+            return m_modelData.at(row).tick;
         }
     }
     else if (role == Qt::ForegroundRole)
@@ -63,9 +68,9 @@ QVariant ModelTimeShare::data(const QModelIndex &index, int role) const
         switch(index.column())
         {
         case 1:
-            if (m_modelData.at(row).price>GlobalVar::preClose)
+            if (m_modelData.at(row).price>m_pGlobalVar->preClose)
                 return QColor(Qt::red);
-            else if (m_modelData.at(row).price<GlobalVar::preClose)
+            else if (m_modelData.at(row).price<m_pGlobalVar->preClose)
                 return QColor(0, 191, 0);
             else return QColor(Qt::black);
         case 2:

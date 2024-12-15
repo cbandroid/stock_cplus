@@ -1,81 +1,98 @@
-
+#include <QtAlgorithms>
+#include <algorithm>
+#include "utilityex.h"
 #include "globalvar.h"
 #include "threadtable.h"
+#include "NetworkManager.h"
 
-ThreadTable::ThreadTable(QObject *parent)
+ThreadTable::ThreadTable(GlobalVar *pGlobalVar,QList<StockInfo> *&pRisingSpeedList,QList<StockInfo> *&pTableList,QList<StockInfo> *&pTableListCopy,QList<StockInfo> *&pMyStockList,QList<QStringList> *&pFundFlowList,QStringList *&pMyStockCode,
+                         QObject *parent)
     : QObject{parent}
 {
+    m_pGlobalVar =pGlobalVar;
+    m_pRisingSpeedList=pRisingSpeedList;
+    m_pTableList=pTableList;
+    m_pTableListCopy=pTableListCopy;
+    m_pMyStockList=pMyStockList;
+    m_pFundFlowList=pFundFlowList;
+    m_pMyStockCode=pMyStockCode;
+
     StockInfo info;
     info.code="";
     for (int i=0;i<risingSpeedSize;++i)
-        GlobalVar::mRisingSpeedList.append(info);
+        m_pRisingSpeedList->append(info);
+
     readMyStock();
 }
 
-void ThreadTable::getTableData()
+void ThreadTable::getTableData(bool bFirst)
 {
-//    QByteArray allData;
-//    QTime t=QDateTime::currentDateTime().time();
-    QString fs="";
-    if (GlobalVar::WhichInterface==1)
+    QString qUrl,fs="";
+
+    if (m_pGlobalVar->WhichInterface==CNMARKET)
     {
         fs="m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048";
-        GlobalVar::getData(allData,3,QUrl("http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=1&fid=f22&fs="+fs+"&fields=f2,f3,f5,f6,f8,f9,f12,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667954879297"));
-
-        if (GlobalVar::timeOutFlag[5])
-            GlobalVar::timeOutFlag[5]=false;
-        else
-            {
-                initTableList();
-                reFlaseMyStock();
-                emit getTableDataFinished();
-            }
+        qUrl = "http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=1&fid=f22&fs="+fs+"&fields=f2,f3,f5,f6,f8,f9,f12,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667954879297";      
     }
     else
     {
-        if (GlobalVar::WhichInterface==2)
+        if (m_pGlobalVar->WhichInterface==HKMARKET)
             fs="m:116+t:3,m:116+t:4,m:116+t:1,m:116+t:2";
-        else if (GlobalVar::WhichInterface==5)
+        else if (m_pGlobalVar->WhichInterface==USMARKET)
         {
-            if (GlobalVar::isUsZhStock)
+            if (m_pGlobalVar->isUsZhStock)
                 fs = "b:mk0201";
             else
                 fs = "m:105,m:106,m:107";
         }
-        else if (GlobalVar::WhichInterface==6)
+        else if (m_pGlobalVar->WhichInterface==UKMARKET)
             fs="m:155+t:1,m:155+t:2,m:155+t:3,m:156+t:1,m:156+t:2,m:156+t:5,m:156+t:6,m:156+t:7,m:156+t:8";
-        GlobalVar::getData(allData,3.5,QUrl("http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f6&fs="+fs+"&fields=f2,f3,f5,f6,f8,f9,f12,f13,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667966922156"));
-        if (GlobalVar::timeOutFlag[5])
-            GlobalVar::timeOutFlag[5]=false;
-        else
-        {
-            initTableList();
-            emit getTableDataFinished();
-        }
+
+        qUrl = "http://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f6&fs="+fs+"&fields=f2,f3,f5,f6,f8,f9,f12,f13,f14,f15,f16,f17,f18,f20,f21,f24,f25,f22&_=1667966922156";
+
     }
-//    qDebug()<<t.msecsTo(QDateTime::currentDateTime().time());
+
+
+    NetworkManager networkManager;
+    allData = networkManager.getSync<QByteArray>(QUrl(qUrl));
+    initTableList(bFirst);
+    if (m_pGlobalVar->WhichInterface==CNMARKET)
+    {
+        reFlaseMyStock();
+    }
+    emit getTableDataFinished();
 }
 
-void ThreadTable::initTableList()
+bool ThreadTable::compareStockInfoData(const  StockInfo &s1, const  StockInfo &s2)
 {
+    return s1.code > s2.code;
+}
+
+void ThreadTable::initTableList(bool bFirst)
+{
+
     QJsonParseError jsonError;
     QJsonDocument doc = QJsonDocument::fromJson(allData, &jsonError);
+  //  qDebug() <<"initTableList() " << jsonError.error << allData;
     if (jsonError.error == QJsonParseError::NoError)
     {
+        m_pTableListCopy->clear();
+
         for (int i=0;i<4;++i)
         {
-            GlobalVar::upNums[i]=0;
-            GlobalVar::downNums[i]=0;
+            m_pGlobalVar->upNums[i]=0;
+            m_pGlobalVar->downNums[i]=0;
         }
         QJsonObject jsonObject = doc.object();
         QJsonArray data=jsonObject.value("data").toObject().value("diff").toArray();
         QJsonValue value;
         QVariantMap ceilMap;
         StockInfo info;
-        QList<StockInfo> tempTableListCopy;
-        if (GlobalVar::WhichInterface==1)
+
+        int size =  data.size();
+        if (m_pGlobalVar->WhichInterface==CNMARKET)
         {
-            for (int i = 0; i < data.size(); ++i)
+            for (int i = 0; i < size; ++i)
             {
                 value = data.at(i);
                 ceilMap = value.toVariant().toMap();
@@ -101,9 +118,9 @@ void ThreadTable::initTableList()
                 info.open=ceilMap.value("f17").toFloat();
                 if (info.pctChg>=8)
                 {
-                    GlobalVar::upNums[3]+=1;
-                    GlobalVar::upNums[2]+=1;
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[3]+=1;
+                    m_pGlobalVar->upNums[2]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
                     int ph=110;
                     float a=int(info.preClose*ph+0.5)/100.0;
                     if (info.code.left(1)=="3" or info.code.left(3)=="688")
@@ -117,21 +134,21 @@ void ThreadTable::initTableList()
                         a=int(info.preClose*ph)/100.0;
                     }
                     if (info.close==a)
-                        GlobalVar::upNums[1]+=1;
+                        m_pGlobalVar->upNums[1]+=1;
                 }
                 else if (info.pctChg>=5)
                 {
-                    GlobalVar::upNums[2]+=1;
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[2]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
 
                 }
                 else if (info.pctChg>0)
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
                 else if (info.pctChg<=-8)
                 {
-                    GlobalVar::downNums[3]+=1;
-                    GlobalVar::downNums[2]+=1;
-                    GlobalVar::downNums[0]+=1;
+                    m_pGlobalVar->downNums[3]+=1;
+                    m_pGlobalVar->downNums[2]+=1;
+                    m_pGlobalVar->downNums[0]+=1;
                     int pl=90;
                     float b=int(info.preClose*pl+0.5)/100.0;
                     if (info.code.left(1)=="3" or info.code.left(3)=="688")
@@ -146,67 +163,103 @@ void ThreadTable::initTableList()
                     }
                     if (info.close==b)
                     {
-                        GlobalVar::downNums[1]+=1;
+                        m_pGlobalVar->downNums[1]+=1;
                     }
                 }
                 else if (info.pctChg<=-5)
                 {
-                    GlobalVar::downNums[2]+=1;
-                    GlobalVar::downNums[0]+=1;
+                    m_pGlobalVar->downNums[2]+=1;
+                    m_pGlobalVar->downNums[0]+=1;
                 }
                 else if (info.pctChg<0)
-                    GlobalVar::downNums[0]+=1;
-                tempTableListCopy.append(info);
+                    m_pGlobalVar->downNums[0]+=1;
+                m_pTableListCopy->append(info);
             }
-            GlobalVar::mTableListCopy=tempTableListCopy;
-            if (not GlobalVar::isBoard)
-                GlobalVar::mTableList=GlobalVar::mTableListCopy;
+
+            if (not m_pGlobalVar->isBoard){
+                m_pTableList->clear();
+                m_pTableList->assign( m_pTableListCopy->begin(),m_pTableListCopy->end());
+			}
             for (int i=0;i<risingSpeedSize;++i)
-                GlobalVar::mRisingSpeedList.replace(i,GlobalVar::mTableListCopy.at(i));
-            GlobalVar::sortByColumn(&GlobalVar::mTableListCopy,0,true);
-//            GlobalVar::m_risingSpeedModel->setModelData(GlobalVar::mRisingSpeedList,false);
+                m_pRisingSpeedList->replace(i, m_pTableListCopy->at(i));
+				
+            sortByColumn(m_pRisingSpeedList,m_pGlobalVar->curSortNum[2],m_pGlobalVar->is_asc[2]);
+            sortByColumn(m_pTableListCopy,0,true);
+
         }
         else
         {
-            GlobalVar::mTableList.clear();
-            for (int i = 0; i < data.size(); ++i)
+            if (bFirst)
             {
+               m_pGlobalVar->CodeNameData.clear();// 键盘精灵设置
+            }
+            QList<QStringList> allDataPinYinList;
+            m_pTableList->clear();
+            QString strItem;
+            int size =  data.size();
+            QStringList tmpList;
+            for (int i = 0; i < size; ++i)
+            {
+                tmpList.clear();
                 value = data.at(i);
                 ceilMap = value.toVariant().toMap();
 
                 info.name = ceilMap.value("f14").toString();
-                if (GlobalVar::WhichInterface==5 or GlobalVar::WhichInterface==6)
+
+                if (m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET){
                     info.code = ceilMap.value("f13").toString()+"."+ceilMap.value("f12").toString();
-                else
+
+                     strItem=  ceilMap.value("f12").toString()+","+info.name +","+CNToEL(info.name)+","+ceilMap.value("f13").toString();
+
+                    if (bFirst)
+                    {
+                       allDataPinYinList.append(tmpList<<ceilMap.value("f12").toString()<< info.name << CNToEL(info.name)<<ceilMap.value("f13").toString());
+                    }
+
+                }
+                else{
+                    // code+name+pinyin
                     info.code = ceilMap.value("f12").toString();
+                    strItem=  info.code+","+info.name +","+CNToEL(info.name);
+                    if (bFirst)
+                    {
+                       allDataPinYinList.append(tmpList<<info.code<< info.name << CNToEL(info.name));
+                    }
+                }
                 info.close = ceilMap.value("f2").toFloat();
                 info.pctChg=ceilMap.value("f3").toFloat();
+
+                if (bFirst)
+                {
+                   m_pGlobalVar->CodeNameData.append(strItem);
+                }
+
                 if (info.pctChg>=8)
                 {
-                    GlobalVar::upNums[3]+=1;
-                    GlobalVar::upNums[2]+=1;
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[3]+=1;
+                    m_pGlobalVar->upNums[2]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
                 }
                 else if (info.pctChg>=5)
                 {
-                    GlobalVar::upNums[2]+=1;
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[2]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
                 }
                 else if (info.pctChg>0)
-                    GlobalVar::upNums[0]+=1;
+                    m_pGlobalVar->upNums[0]+=1;
                 else if (info.pctChg<=-8)
                 {
-                    GlobalVar::downNums[3]+=1;
-                    GlobalVar::downNums[2]+=1;
-                    GlobalVar::downNums[0]+=1;
+                    m_pGlobalVar->downNums[3]+=1;
+                    m_pGlobalVar->downNums[2]+=1;
+                    m_pGlobalVar->downNums[0]+=1;
                 }
                 else if (info.pctChg<=-5)
                 {
-                    GlobalVar::downNums[2]+=1;
-                    GlobalVar::downNums[0]+=1;
+                    m_pGlobalVar->downNums[2]+=1;
+                    m_pGlobalVar->downNums[0]+=1;
                 }
                 else if (info.pctChg<0)
-                    GlobalVar::downNums[0]+=1;
+                    m_pGlobalVar->downNums[0]+=1;
                 info.turn=ceilMap.value("f8").toFloat();
                 info.amount=ceilMap.value("f6").toFloat();
                 info.velocity = ceilMap.value("f22").toFloat();
@@ -220,35 +273,51 @@ void ThreadTable::initTableList()
                 info.low = ceilMap.value("f16").toFloat();
                 info.open=ceilMap.value("f17").toFloat();
                 info.preClose=ceilMap.value("f18").toFloat();
-                GlobalVar::mTableList.append(info);
+
+                 m_pTableList->append(info);
             }
+
+
+           if (bFirst)
+           {
+             m_pGlobalVar->CodeNameData.sort();
+             std::sort(allDataPinYinList.begin(),allDataPinYinList.end(),[](QStringList a,QStringList b){
+                return a[2]<b[2];
+             });
+             m_pGlobalVar->PinYinData.clear();
+             for (const QStringList& innerList : allDataPinYinList) {
+               m_pGlobalVar->PinYinData.append(innerList.join(","));
+             }
+           }
+
         }
-        GlobalVar::sortByColumn(&GlobalVar::mTableList,GlobalVar::curSortNum,GlobalVar::is_asc);
-//        GlobalVar::m_tableModel->setModelData(GlobalVar::mTableList,false);
+        sortByColumn( m_pTableList,m_pGlobalVar->curSortNum[0],m_pGlobalVar->is_asc[0]);
+
     }
 }
 
 void ThreadTable::readMyStock()
 {
-    GlobalVar::mMyStockCode=GlobalVar::settings->value("myStock").toStringList();
+    *m_pMyStockCode=m_pGlobalVar->settings->value("myStock").toStringList();
     StockInfo info;
-    for(int i=0;i<GlobalVar::mMyStockCode.count();++i)
+    int nCount=m_pMyStockCode->count();   
+    for(int i=0;i<nCount;++i)
     {
-        info.code=GlobalVar::mMyStockCode.at(i);
-        GlobalVar::mMyStockList.append(info);
+        info.code=m_pMyStockCode->at(i);
+        m_pMyStockList->append(info);
     }
 }
 
 void ThreadTable::reFlaseMyStock()
 {
-    if (GlobalVar::mTableListCopy.isEmpty())
+    if (m_pTableListCopy->isEmpty()){
         return;
-    StockInfo info;
-    for (int i=0;i<GlobalVar::mMyStockList.count();++i)
-    {
-        info=GlobalVar::findStock(GlobalVar::mMyStockList.at(i).code);
-        GlobalVar::mMyStockList.replace(i,info);
     }
-//    GlobalVar::m_myStockModel->setModelData(GlobalVar::mMyStockList,false);
+    StockInfo info;
+    int nCount=m_pMyStockList->count();
+    for (int i=0;i<nCount;++i)
+    {
+        info=findStock(m_pTableListCopy,m_pMyStockList->at(i).code);
+        m_pMyStockList->replace(i,info);
+    }    
 }
-

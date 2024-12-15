@@ -17,13 +17,15 @@
 //#include "qtextcodec.h"
 #include <QFile>
 #include <QProgressBar>
+#include "stockinfo.h"
 
+class GlobalVar;
 
 class JSPickStock : public QDialog
 {
     Q_OBJECT
 public:
-    Q_INVOKABLE JSPickStock(QDialog *parent = nullptr);
+    Q_INVOKABLE JSPickStock(GlobalVar *pGlobalVar,QList<StockInfo> *&pTableList,QList<StockInfo> *&pTableListCopy,QDialog *parent = nullptr);
     ~JSPickStock();
     Q_INVOKABLE float P();
     Q_INVOKABLE float P(int day);
@@ -55,7 +57,10 @@ public:
     QString replaceFormula(QString s);
     bool isRunning=false;
     QString name[5]={"上证A股","深圳A股","科创版","北交所","剔除ST和退市"};
-
+private:
+    QList<StockInfo> *m_pTableList;
+    QList<StockInfo> *m_pTableListCopy;
+    GlobalVar *m_pGlobalVar;
 signals:
     void updateTableList();
 

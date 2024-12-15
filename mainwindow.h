@@ -1,16 +1,18 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
-
+#include <windows.h>
+//#include <cstddef>
+//#include <stdio.h>
 #include <QMainWindow>
-
-
 #include <qgridlayout.h>
 #include "tablestock.h"
+#include "fundflow.h"
 #include "drawchart.h"
 #include "searchstock.h"
 #include "requeststocsv.h"
 #include "f10view.h"
-#include "fundflow.h"
+#include <qmutex.h>
+#include <qlabel.h>
 #include <QTimer>
 #include <QThread>
 #include <QLabel>
@@ -27,14 +29,18 @@
 #include <QListWidgetItem>
 // #include <complex>
 #include <QProcess>
+#include "stockinfo.h"
+
+
 #undef slots
-#include <Python.h>
+//#include <Python.h>
 #define slots Q_SLOTS
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+class GlobalVar;
 class JSPickStock;
 class ThreadTable;
 class ThreadIndex;
@@ -42,15 +48,15 @@ class ThreadTimeShareTick;
 class ThreadTimeShareChart ;
 class ThreadNewsReport;
 class ThreadCandleChart;
-
-
+class CTechnique;
+class CKData;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
 private slots:
@@ -64,15 +70,20 @@ private slots:
     void dealWithFundFlow();
     void fastTrade();
     void delMyStock();
-    void updateFeeling(QDate date);
-    void min15Kline();
-    void min60Kline();
-    void quarterKline();
-    void yearKline();
+	void updateFeeling(QDate date);
+    void handleRateChanged(float value);
+    void handleVolumeChanged(float value);
+    void handlePitchChanged(float value);
+    void ChangeKline();
+
+    void SelectTechAction();
+    void tableViewSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
+    void ontableViewclicked(const QModelIndex &index);
+    void onTabFocusChanged();
 
 signals:
-    void startThreadTable();
-    void startThreadIndex();
+    void startThreadTable(bool first);
+    void startThreadIndex(bool reset);
     void startThreadTimeShareTick(bool reset);
     void startThreadTimeShareChart(bool reset);
     void startThreadGetNews();
@@ -80,14 +91,15 @@ signals:
 
 private:
     Ui::MainWindow *ui;
+    GlobalVar *m_pGlobalVar;
     QProcess *QMTProcess;
-    TableStock mTableStock;
-    DrawChart drawChart;
-    SearchStock searchStock;
-    RequestsToCsv requestsToCsv;
-    F10View f10View;
-    FundFlow mFundFlow;
-    JSPickStock *mPickStock;
+    TableStock *pTableStock;
+    DrawChart *pDrawChart;
+    SearchStock *pSearchStock;
+    RequestsToCsv *pRequestsToCsv;
+    F10View *pF10View;
+    FundFlow *pFundFlow;
+    JSPickStock *pPickStock;
     ThreadTable *threadTable;
     ThreadIndex *threadIndex;
     ThreadTimeShareTick *threadTimeShareTick;
@@ -96,8 +108,8 @@ private:
     ThreadCandleChart *threadCandleChart;
     bool isThreadRunning=false;
     bool isFlashBaseInfo=true;
-    PyObject* pModule;
-
+   // PyObject* pModule;
+    QDateTime lastTime;
     QThread *thread[6];
     QTimer *tim;
     QLabel *circle;
@@ -116,20 +128,23 @@ private:
     QPointF p;
     int hisTimeShareN;
     QString account;
-
+    int ReqKtimeCount;
     int timeCount=-3;
     QString downloadDate;
     QString feelingDate;
     bool changeInTurn=true;
     bool isAsia=true;
     bool isTraversalMyStock=false;
-    int ifCanClick=1;
+    int ifCanClick;
     QString freq="1"; 
     QString adjustFlag="0";
     QRadioButton *periodAdjust[9];
     QPushButton *F10Info[6];
     QPushButton *fundFlow[10];
-    QString preCode="";
+    QString m_PreCode="";
+    QString qStrPreFreq="";
+    QString qStrPreAdjustFlag="";
+
     QLabel *EPSLabel;
     QLabel *PELabel;
     QLabel *fTitle=new QLabel("标题栏",this);
@@ -140,10 +155,11 @@ private:
     QComboBox *tradedetailBox=new QComboBox(this);
     QComboBox *singleStockBoard=new QComboBox(this);
     QComboBox *openFundBox=new QComboBox(this);
-    bool preSort=false;
+    bool preSort[4]={false,false,false,false};
     float tradePrice;
     int howPosition=0;
-
+    //bool timeShareRunning=false;
+    bool AleadyInCandleChartPainter;
     void initGlobalVar();
     void initThread();
     void initInterface();
@@ -157,11 +173,41 @@ private:
     void toInterFace(QString which);
     void toFundFlow();
     void downUpLookStock(QWheelEvent *event);
-
-
+    void EastWebTrade();
+    void SetSpeechRate();
+    void KeyMoveUpOrDown(short incIdx);
+    QString getKlineDate(time_t date);
+    bool bWantReqKline;
+    bool bNewCalc;
+    unsigned short nTech;
+    CTechnique *pTech;
+    QMutex TradeMutex;
+    QMutex formulaMutex;
 protected:
+    ModelTableStock *m_pTableModel;
+    ModelTableStock *m_pRisingSpeedModel;
+    ModelTableStock *m_pMyStockModel;
+    ModelTimeShare *m_pTimeShareTickModel;
+    QList<StockInfo> *m_pTableList;
+    QList<StockInfo> *m_pTableListCopy;
+    QList<StockInfo> *m_pRisingSpeedList;
+    QList<StockInfo> *m_pMyStockList;
+    QList<QStringList> *m_pFundFlowList;
+
+     QStringList *m_pMyStockCode;
+     QList<IndexInfo> *m_pIndexList;
+     QList<timeShareTickInfo> *m_pTimeShareTickList;
+     QList<timeShareChartInfo> *m_pTimeShareChartList;
+     QList<timeShareChartInfo> *m_pHisTimeShareChartList;
+
+    CKData *m_pKline;
+    CLCore *m_pCLCore;
+
+    QTableView *SelectedtableView;
+    QDateTime dldlastTime;
+
     bool eventFilter(QObject *obj, QEvent *event) override;//事件过滤器
-    void mousePressEvent(QMouseEvent *event)  override;
+    void mousePressEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event)  override;
     void wheelEvent(QWheelEvent *event)  override;
 };

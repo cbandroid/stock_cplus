@@ -1,7 +1,10 @@
+#include <QLoggingCategory>
 #include <QTextCodec>
+#include <Windows.h>
 #include "globalvar.h"
-#include "mainwindow.h"
 #include <qheaderview.h>
+
+#include "utilityex.h"
 #include "stockinfo.h"
 #include "jspickstock.h"
 #include "threadtable.h"
@@ -12,154 +15,307 @@
 #include "threadcandlechart.h"
 #include "modeltablestock.h"
 #include "modelfundflow.h"
+#include "modeltimeshare.h"
 #include "ui_mainwindow.h"
+#include "ttscfgdlg.h"
+#include "mainwindow.h"
+#include "tech/Technique.h"
+
+#define CIRCLE_GREEN_SHEETSTYLE  "min-width: 16px; min-height: 16px;max-width:16px; max-height: 16px;border-radius: 8px;  border:1px solid black;background:green"
+#define CIRCLE_RED_SHEETSTYLE  "min-width: 16px; min-height: 16px;max-width:16px; max-height: 16px;border-radius: 8px;  border:1px solid black;background:red"
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
-    Py_Initialize();
-    pModule=PyImport_ImportModule("qmt");
 
+    m_pGlobalVar = new GlobalVar();
+
+    pFundFlow = new FundFlow(m_pGlobalVar);
+    m_pTableList = new QList<StockInfo>();
+    m_pTableListCopy = new QList<StockInfo>();
+    m_pRisingSpeedList = new QList<StockInfo>();
+    m_pMyStockList = new QList<StockInfo>();
+    m_pFundFlowList = new QList<QStringList>();
+
+    m_pMyStockCode = new QStringList();
+    m_pIndexList = new QList<IndexInfo>();
+    m_pTimeShareTickList = new QList<timeShareTickInfo>();
+    m_pTimeShareChartList = new QList<timeShareChartInfo>();
+    m_pHisTimeShareChartList = new QList<timeShareChartInfo>();
+
+    m_pTimeShareTickModel = new ModelTimeShare(m_pGlobalVar);
+
+    pRequestsToCsv = new RequestsToCsv(m_pGlobalVar,m_pTableListCopy);
+
+    pTableStock = new TableStock( m_pGlobalVar, m_pMyStockCode,  m_pMyStockList,
+                                 m_pTableList,
+                                 m_pRisingSpeedList,
+                                 m_pTimeShareTickList);
+
+
+    m_pTableModel =  new  ModelTableStock(m_pGlobalVar,m_pMyStockCode);
+    m_pRisingSpeedModel=  new  ModelTableStock(m_pGlobalVar,m_pMyStockCode);
+    m_pMyStockModel=  new  ModelTableStock(m_pGlobalVar,m_pMyStockCode);
+
+
+    pDrawChart=new  DrawChart(m_pGlobalVar);
+    pSearchStock =new SearchStock (m_pGlobalVar);
+    pF10View=new  F10View(m_pGlobalVar);
+
+    m_pKline = new CKData();
+
+    pTech=nullptr;
+    nTech=STT_VOLUME;
+    bNewCalc= false;
+    bWantReqKline=false;
+    ifCanClick=CNCLICK;
+    //Py_Initialize();
+    //pModule=PyImport_ImportModule("qmt");
+    m_pGlobalVar->isKState=false;
     QMTProcess=new QProcess(this);
-    mPickStock=new JSPickStock;
+    pPickStock=new JSPickStock(m_pGlobalVar, m_pTableList, m_pTableListCopy);
+    SelectedtableView=nullptr;
+    ReqKtimeCount=0;
+    AleadyInCandleChartPainter = false;
+    lastTime=QDateTime::currentDateTime();
+    dldlastTime=QDateTime::currentDateTime();
     initGlobalVar();
-    initThread();
     initInterface();
     initSettings();
+    initThread();   
     initSignals();
+   
     tim = new QTimer(this);
     tim->setInterval(500);
     connect(tim,SIGNAL(timeout()),this,SLOT(tradingTimeRunThread()));
-    tim->start();
+    tim->start();    
 }
 
 MainWindow::~MainWindow()
 {
-    Py_Finalize();
+    tim->stop();
+    delete tim;
+    SetThreadExecutionState(ES_CONTINUOUS );
+    threadNewsReport->isQuit=true;
+    //Py_Finalize();
     saveCode();
-    requestsToCsv.progressBarWindow->close();
+    pRequestsToCsv->progressBarWindowDlg->close();
     QMTProcess->close();
+
     for (int i=0;i<6;++i)
     {
         thread[i]->quit();
         thread[i]->wait();
+        delete  thread[i];
     }
+    delete pPickStock;
+    delete m_pTableModel ;
+    delete m_pRisingSpeedModel;
+    delete m_pMyStockModel;
+    delete m_pTimeShareTickModel ;
+
+    delete  pDrawChart;
+
+    delete  pSearchStock ;
+    delete  pF10View;
+    threadTable->deleteLater();
     delete threadTable;
+    threadIndex->deleteLater();
     delete threadIndex;
+    threadTimeShareTick->deleteLater();
     delete threadTimeShareTick;
+    threadTimeShareChart->deleteLater();
     delete threadTimeShareChart;
+    threadNewsReport->deleteLater();
     delete threadNewsReport;
+    threadCandleChart->deleteLater();
     delete threadCandleChart;
+
+    m_pTableList->clear();
+    delete m_pTableList ;
+    m_pTableListCopy->clear();
+    delete m_pTableListCopy ;
+    m_pRisingSpeedList->clear();
+    delete m_pRisingSpeedList ;
+    m_pMyStockList->clear();
+    delete m_pMyStockList ;
+    m_pFundFlowList->clear();
+    delete m_pFundFlowList ;
+    m_pMyStockCode->clear();
+    delete m_pMyStockCode;
+    m_pIndexList->clear();
+    delete m_pIndexList ;
+    m_pTimeShareTickList->clear();
+    delete m_pTimeShareTickList ;
+    m_pTimeShareChartList->clear();
+    delete m_pTimeShareChartList ;
+
+    m_pHisTimeShareChartList->clear();
+    delete m_pHisTimeShareChartList ;
+
+
+    delete pRequestsToCsv;
+    delete pTableStock ;
+
+
+    if (pTech!=nullptr)
+       delete pTech;
+
+    delete  m_pGlobalVar;
+
+    m_pKline->Clear();
+    delete m_pKline;
+
     delete ui;
 }
 
 void MainWindow::initGlobalVar()
 {
-    GlobalVar::currentPath=QCoreApplication::applicationDirPath();
-    GlobalVar::settings=new QSettings(GlobalVar::currentPath+"/config.ini",QSettings::IniFormat,this);
-    GlobalVar::curCode=GlobalVar::settings->value("curCode").toString();
-    GlobalVar::isSayNews=GlobalVar::settings->value("sayNews").toBool();
-    GlobalVar::speechrate=GlobalVar::settings->value("speechrate").toFloat();
-    GlobalVar::offsetEnd=GlobalVar::settings->value("offsetEnd").toInt();
-    downloadDate=GlobalVar::settings->value("curTime").toString();
-    feelingDate=GlobalVar::settings->value("feelingTime").toString();
-    account=GlobalVar::settings->value("account").toString();
-//    QString path=GlobalVar::currentPath+"/python/";
+    m_pGlobalVar->currentPath=QCoreApplication::applicationDirPath();
+    m_pGlobalVar->settings=new QSettings(m_pGlobalVar->currentPath+"/config.ini",QSettings::IniFormat,this);
+    m_pGlobalVar->curCode=m_pGlobalVar->settings->value("curCode").toString();
+    m_pGlobalVar->isSayNews=m_pGlobalVar->settings->value("sayNews").toBool();
+    m_pGlobalVar->speechrate=m_pGlobalVar->settings->value("speechrate").toFloat();
+   // m_pGlobalVar->offsetEnd=m_pGlobalVar->settings->value("offsetEnd").toInt();
+    downloadDate=m_pGlobalVar->settings->value("curTime").toString();
+    feelingDate=m_pGlobalVar->settings->value("feelingTime").toString();
+    account=m_pGlobalVar->settings->value("account").toString();
+
+//    QString path=m_pGlobalVar->currentPath+"/python/";
 //    Py_SetPythonHome((wchar_t *)(reinterpret_cast<const wchar_t *>(path.utf16())));
     for (int i=0;i<5;++i)
-        GlobalVar::areaFlag[i]=true;
-    GlobalVar::pRed.setColor(QPalette::WindowText, Qt::red);
-    GlobalVar::pGreen.setColor(QPalette::WindowText, QColor(0,191,0));
-    GlobalVar::pBlack.setColor(QPalette::WindowText, Qt::black);
-    GlobalVar::pBlue.setColor(QPalette::WindowText, Qt::blue);
-    GlobalVar::pWhite.setColor(QPalette::WindowText, Qt::white);
+        m_pGlobalVar->areaFlag[i]=true;
+    m_pGlobalVar->pRed.setColor(QPalette::WindowText, Qt::red);
+    m_pGlobalVar->pGreen.setColor(QPalette::WindowText, QColor(0,191,0));
+    m_pGlobalVar->pBlack.setColor(QPalette::WindowText, Qt::black);
+    m_pGlobalVar->pBlue.setColor(QPalette::WindowText, Qt::blue);
+    m_pGlobalVar->pWhite.setColor(QPalette::WindowText, Qt::white);
 }
+
 void MainWindow::initThread()
 {
     for (int i=0;i<6;++i)
         thread[i]=new QThread(this);
 
-    threadTable=new ThreadTable;
+    threadTable=new ThreadTable(m_pGlobalVar,m_pRisingSpeedList,m_pTableList,m_pTableListCopy,m_pMyStockList,m_pFundFlowList,m_pMyStockCode);
     threadTable->moveToThread(thread[0]);
     connect(threadTable,&ThreadTable::getTableDataFinished,this,[=](){
-        mTableStock.setTableView();
-        feelingData[0]->setText(QString::number(GlobalVar::upNums[0]));
-        feelingData[1]->setText(QString::number(GlobalVar::upNums[1]));
-        feelingData[2]->setText(QString::number(GlobalVar::upNums[2])+"/"+QString::number(GlobalVar::upNums[3]));
-        feelingData[4]->setText(QString::number(GlobalVar::downNums[0]));
-        feelingData[5]->setText(QString::number(GlobalVar::downNums[1]));
-        feelingData[6]->setText(QString::number(GlobalVar::downNums[2])+"/"+QString::number(GlobalVar::downNums[3]));
-        feelingData[3]->setText(GlobalVar::format_conversion(threadIndex->totalAmount));
+        pTableStock->setTableView();
+
+        if (not m_pTimeShareChartList->isEmpty())
+        {
+            QDate t_ = dateEdit1->date();
+            QString qStrTime =  m_pTimeShareChartList->at(0).time;
+            QDateTime tt = QDateTime::fromString(qStrTime, "yyyy-MM-dd hh:mm");
+            QDate tt_ = tt.date();
+
+            if (tt_ !=t_)
+                return;
+        }
+
+        feelingData[0]->setText(QString::number(m_pGlobalVar->upNums[0]));
+        feelingData[1]->setText(QString::number(m_pGlobalVar->upNums[1]));
+        feelingData[2]->setText(QString::number(m_pGlobalVar->upNums[2])+"/"+QString::number(m_pGlobalVar->upNums[3]));
+        feelingData[4]->setText(QString::number(m_pGlobalVar->downNums[0]));
+        feelingData[5]->setText(QString::number(m_pGlobalVar->downNums[1]));
+        feelingData[6]->setText(QString::number(m_pGlobalVar->downNums[2])+"/"+QString::number(m_pGlobalVar->downNums[3]));
+        feelingData[3]->setText(format_conversion(threadIndex->totalAmount));
+        /*baseInfoData[7]->setText(QString::number(m_pGlobalVar->upNums[0]));
+        baseInfoData[16]->setText(QString::number(m_pGlobalVar->downNums[0]));
+        baseInfoData[8]->setText(QString::number(m_pGlobalVar->upNums[1])+"/"+QString::number(m_pGlobalVar->upNums[2]));
+        baseInfoData[17]->setText(QString::number(m_pGlobalVar->downNums[1])+"/"+QString::number(m_pGlobalVar->downNums[2]));
+		*/
     });
     connect(this,&MainWindow::startThreadTable,threadTable,&ThreadTable::getTableData);
     thread[0]->start();
-    emit startThreadTable();
+    emit startThreadTable(true);
 
-    threadIndex=new ThreadIndex;
+    threadIndex=new ThreadIndex(m_pGlobalVar,m_pIndexList,m_pFundFlowList);
     threadIndex->moveToThread(thread[1]);
     connect(threadIndex,SIGNAL(getIndexFinished()),this,SLOT(reFlashIndex()));
     connect(threadIndex,&ThreadIndex::getBlockFinished,this,[=](){
-        int row=mTableStock.blockView->currentIndex().row();
+        int row=pTableStock->blockView->currentIndex().row();
         if (row==-1)
             row=0;
-        mTableStock.m_fundFlowModel->setModelData(GlobalVar::mFundFlowList,false);
-        mTableStock.blockView->setCurrentIndex(mTableStock.m_fundFlowModel->index(row,0));
+        pTableStock->m_fundFlowModel->setModelData(*m_pFundFlowList,false);
+       pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(row,0));
     });
     connect(this,&MainWindow::startThreadIndex,threadIndex,&ThreadIndex::getAllIndex);
     thread[1]->start();
-    emit startThreadIndex();
+    emit startThreadIndex(true);
 
-    threadTimeShareTick=new ThreadTimeShareTick;
+    threadTimeShareTick=new ThreadTimeShareTick(m_pGlobalVar,m_pTimeShareTickList);
     threadTimeShareTick->moveToThread(thread[2]);
     connect(threadTimeShareTick,&ThreadTimeShareTick::getTimeShareTickFinished,this,[=](){
-        mTableStock.setTimeShareTickView();
+        pTableStock->setTimeShareTickView();
     });
     connect(threadTimeShareTick,SIGNAL(getBuySellFinished()),this,SLOT(reFlashBuySellBaseInfo()));
     connect(this,&MainWindow::startThreadTimeShareTick,threadTimeShareTick,&ThreadTimeShareTick::getBuySellTimeShareTick);
     thread[2]->start();
-    emit startThreadTimeShareTick(false);
+    emit startThreadTimeShareTick(true);
 
-    threadNewsReport=new ThreadNewsReport;
+    threadNewsReport=new ThreadNewsReport(m_pGlobalVar);
     threadNewsReport->moveToThread(thread[3]);
     connect(threadNewsReport,&ThreadNewsReport::getNewsFinished,this,[=](QString s){
+        if (s.isEmpty())
+            return;
+        QTextDocument *document = newsData->document(); 
+        int lineCount = document->blockCount(); // 获取文本的行数
+        if  (lineCount >300) //fixed 限制使用内存
+         {
+            newsData->clear();
+        }
         newsData->append(s);
-});
+    });
     connect(this,&MainWindow::startThreadGetNews,threadNewsReport,&ThreadNewsReport::getNewsData);
     thread[3]->start();
     emit startThreadGetNews();
 
-    threadTimeShareChart=new ThreadTimeShareChart;
+    threadTimeShareChart=new ThreadTimeShareChart(m_pGlobalVar,m_pTimeShareChartList);
     threadTimeShareChart->moveToThread(thread[4]);
     connect(threadTimeShareChart,&ThreadTimeShareChart::getTimeShareChartFinished,this,[=](){
 //        QWidget *pActiveWindow = QApplication::activeWindow();
 //        MainWindow *pMainWindow = dynamic_cast<MainWindow*>(pActiveWindow);
 //        if(pMainWindow && pMainWindow == this)
-            drawChart.timeShareChart->update();
+            pDrawChart->timeShareChart->update();
 
     });
+
     connect(this,&MainWindow::startThreadTimeShareChart,threadTimeShareChart,&ThreadTimeShareChart::getAllTimeShareChart);
     thread[4]->start();
     emit startThreadTimeShareChart(false);
 
-    threadCandleChart=new ThreadCandleChart;
+    threadCandleChart=new ThreadCandleChart(m_pGlobalVar,m_pKline,m_pCLCore);
     threadCandleChart->moveToThread(thread[5]);
     connect(threadCandleChart,&ThreadCandleChart::getCandleChartFinished,this,[=](){
-        drawChart.candleChart->update();
+        bNewCalc=true;
+        bWantReqKline=false;
+        pDrawChart->candleChart->update();
     });
     connect(this,&MainWindow::startThreadCandleChart,threadCandleChart,&ThreadCandleChart::getAllCandleChart);
     thread[5]->start();
 
+    QLoggingCategory::setFilterRules(QStringLiteral("qt.speech.tts=true \n qt.speech.tts.*=true"));
+
 }
+
 void MainWindow::initInterface()
 {
     ui->setupUi(this);
     setWindowTitle("Stock");
     setWindowIcon(QIcon(":/new/png/png/logo.ico"));
-    // setWindowState(Qt::WindowMaximized);
-    if (not GlobalVar::isSayNews)
+
+    QScreen* screen = QGuiApplication::primaryScreen();
+    int w=screen->size().width();
+    int h=screen->size().height();
+
+    this->resize(w,h);
+
+    if (not m_pGlobalVar->isSayNews)
         ui->newsReport->setChecked(true);
-    // if (GlobalVar::settings->value("isSetVacation").toString()==QDateTime::currentDateTime().toString("yyyy"))
+    // if (m_pGlobalVar->settings->value("isSetVacation").toString()==QDateTime::currentDateTime().toString("yyyy"))
     //     ui->setVacation->setEnabled(false);
     QActionGroup *market = new QActionGroup(this);
     market->addAction(ui->HKMarket);
@@ -168,9 +324,9 @@ void MainWindow::initInterface()
     ui->ZHMarket->setChecked(true);
 
     ui->horizontalLayout->setSpacing(0);
-    ui->horizontalLayout->addWidget(mTableStock.stockTableView);
-    ui->horizontalLayout->addWidget(drawChart.candleChart);
-    drawChart.candleChart->hide();
+    ui->horizontalLayout->addWidget(pTableStock->stockTableView);
+    ui->horizontalLayout->addWidget(pDrawChart->candleChart);
+    pDrawChart->candleChart->hide();
 
     middleWindow=new QWidget(this);
     QVBoxLayout *middleLayout =new QVBoxLayout;
@@ -180,16 +336,20 @@ void MainWindow::initInterface()
     middleLayout->setContentsMargins(0,0,0,0);
     middleDLayout->setSpacing(0);
     middleDLayout->setContentsMargins(0,0,0,0);
-    // mTableStock.blockView->setMaximumHeight(454);
-    mTableStock.risingSpeedView->setMaximumWidth(285);
-    mTableStock.risingSpeedView->setMinimumHeight(496);
-    mTableStock.myStockView->setMinimumHeight(496);
-    mTableStock.blockView->setMinimumWidth(785);
-    middleLayout->addWidget(mTableStock.blockView);
+
+    pTableStock->stockTableView->setMinimumWidth(486);
+
+    pTableStock->risingSpeedView->setMaximumWidth(285);
+    pTableStock->risingSpeedView->setMinimumHeight(496);
+    pTableStock->myStockView->setMinimumHeight(496);
+
+    pTableStock->blockView->setMinimumWidth(780);
+
+    middleLayout->addWidget(pTableStock->blockView);
     middleLayout->addLayout(middleDLayout);
-    middleDLayout->addWidget(mTableStock.risingSpeedView);
-    // middleDLayout->addWidget(mTableStock.blockView);
-    middleDLayout->addWidget(mTableStock.myStockView);
+    middleDLayout->addWidget(pTableStock->risingSpeedView);
+
+    middleDLayout->addWidget(pTableStock->myStockView);
 
     rightBaseWindow=new QWidget(this);
     rightBaseWindow->setMaximumWidth(450);
@@ -230,7 +390,7 @@ void MainWindow::initInterface()
     rightLayout->addLayout(freqAdjustLayout);
     QButtonGroup *freq=new QButtonGroup(this);
     QStringList periodAdjustName={"1F","5F","30F","日线","周线","月线","不复权","前复权","后复权"};
-  
+  //   QStringList periodAdjustName={"日线","周线","月线","不复权","前复权","后复权"};
     for (int i=0;i<9;++i)
     {
         periodAdjust[i]=new QRadioButton(periodAdjustName[i],this);
@@ -241,8 +401,8 @@ void MainWindow::initInterface()
     periodAdjust[0]->setChecked(true);
     periodAdjust[6]->setChecked(true);
 
-    drawChart.timeShareChart->setMinimumHeight(300);
-    rightLayout->addWidget(drawChart.timeShareChart);
+    pDrawChart->timeShareChart->setMinimumHeight(300);
+    rightLayout->addWidget(pDrawChart->timeShareChart);
 
     initBaseInfoLayout(baseInfoLayout);
     initBuySellLayout(buySellLayout);
@@ -252,7 +412,7 @@ void MainWindow::initInterface()
     periodBox->setCurrentIndex(3);
     northBox->addItems({"今日", "3日", "5日", "10日", "月", "季", "年"});
     singleStockBoard->addItems({"近一月", "近三月", "近半年", "近一年"});
-    tradedetailBox->addItems({GlobalVar::curRecentWorkDay(1).toString("yyyy-MM-dd"),"近3日", "近5日", "近10日", "近30日"});
+    tradedetailBox->addItems({m_pGlobalVar->curRecentWorkDay(1).toString("yyyy-MM-dd"),"近3日", "近5日", "近10日", "近30日"});
     openFundBox->addItems({"全部","股票型","混合型","债券型","指数型","QDII","LOF","FOF"});
     dateEdit->setCurrentSection(QDateEdit::DaySection);
     QStringList fundFlowName={"东方财富板块资金流","同花顺板块资金流","新高新低数量","股票热度、淘股吧",
@@ -277,19 +437,32 @@ void MainWindow::initInterface()
     instructionText->setStyleSheet("background-color:#F3F3F3;");
 //    instructionText->setMaximumHeight(300);
     rightFundLayout->addWidget(instructionText);
-    instructionText->append(GlobalVar::settings->value("Instruction").toString());
+    instructionText->append(m_pGlobalVar->settings->value("Instruction").toString());
 
     circle=new QLabel(this);
     ui->statusBar->addWidget(circle);
-    circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+    circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
+    QPushButton *indexButton;
+    QLabel *indexLabel;
+    QString styleSheet1;
+    QString styleSheet2;
+    if (w>2160){
+        styleSheet1="QPushButton{font:bold;font-size:16px;font-family:微软雅黑;}";
+        styleSheet2="QLabel{font:bold;font-size:16px;}";
+    }
+    else{
+        styleSheet1="QPushButton{font:bold;font-size:13px;font-family:微软雅黑;}";
+        styleSheet2="QLabel{font:bold;font-size:13px;}";
+    }
+
     for(int i=1;i<=8;++i)
     {
 //        QHBoxLayout *statusBarLayout=new QHBoxLayout(ui->statusBar);
 //        ui->statusBar->setLayout(statusBarLayout);
-        QPushButton *indexButton = new QPushButton(QString::asprintf("Button%d", i), this);
-        indexButton->setStyleSheet("QPushButton{font:bold;font-size:16px;font-family:微软雅黑;}");
-        QLabel *indexLabel=new QLabel(QString::asprintf("Label%d", i), this);
-        indexLabel->setStyleSheet("QLabel{font:bold;font-size:14px;}");
+        indexButton = new QPushButton(QString::asprintf("Button%d", i), this);
+        indexButton->setStyleSheet(styleSheet1);
+        indexLabel=new QLabel(QString::asprintf("Label%d", i), this);
+        indexLabel->setStyleSheet(styleSheet2);
         ui->statusBar->addWidget(indexButton);
         ui->statusBar->addWidget(indexLabel);
     }
@@ -297,7 +470,7 @@ void MainWindow::initInterface()
 void MainWindow::initSettings()
 {
     this->setAttribute(Qt::WA_DeleteOnClose);
-    if (GlobalVar::isSayNews)
+    if (m_pGlobalVar->isSayNews)
     {
         QIcon icon(":/new/png/png/report.png");
         ui->newsReport->setIcon(icon);
@@ -310,29 +483,49 @@ void MainWindow::initSettings()
         ui->newsReport->setText("打开语音播报");
     }
     newsData->setOpenExternalLinks(true);
-    drawChart.hisTimeShareChart->setParent(this);
+    pDrawChart->hisTimeShareChart->setParent(this);
 
-    mTableStock.stockTableView->setContextMenuPolicy(Qt::CustomContextMenu);
-    mTableStock.risingSpeedView->setContextMenuPolicy(Qt::CustomContextMenu);
-    mTableStock.myStockView->setContextMenuPolicy(Qt::CustomContextMenu);
+    pTableStock->stockTableView->setContextMenuPolicy(Qt::CustomContextMenu);
+    pTableStock->risingSpeedView->setContextMenuPolicy(Qt::CustomContextMenu);
+    pTableStock->myStockView->setContextMenuPolicy(Qt::CustomContextMenu);
     setFocusPolicy(Qt::StrongFocus);
-    mTableStock.stockTableView->setFocusPolicy(Qt::NoFocus);
-    mTableStock.blockView->setFocusPolicy(Qt::NoFocus);
-    mTableStock.risingSpeedView->setFocusPolicy(Qt::NoFocus);
-    mTableStock.myStockView->setFocusPolicy(Qt::ClickFocus);
-    mTableStock.myStockView->horizontalHeader()->setHighlightSections(false);
+
+
+    pTableStock->myStockView->setFocusPolicy(Qt::ClickFocus);//  Qt::StrongFocus);
+
+    pTableStock->myStockView->horizontalHeader()->setHighlightSections(false);
+
+    connect(pTableStock->stockTableView, SIGNAL(clicked(QModelIndex)), this, SLOT(ontableViewclicked(QModelIndex)));
+    connect(pTableStock->blockView, SIGNAL(clicked(QModelIndex)), this, SLOT(ontableViewclicked(QModelIndex)));
+
+    connect(pTableStock->risingSpeedView, SIGNAL(clicked(QModelIndex)), this, SLOT(ontableViewclicked(QModelIndex)));
+    connect(pTableStock->myStockView, SIGNAL(clicked(QModelIndex)), this, SLOT(ontableViewclicked(QModelIndex)));
+
+    pTableStock->stockTableView->horizontalHeader()->setStretchLastSection(true);
+    pTableStock->blockView->horizontalHeader()->setStretchLastSection(true);
+    pTableStock->risingSpeedView->horizontalHeader()->setStretchLastSection(true);
+    pTableStock->myStockView->horizontalHeader()->setStretchLastSection(true);
+
+    QWidget::setTabOrder(pTableStock->stockTableView, pTableStock->blockView);
+    QWidget::setTabOrder(pTableStock->blockView,pTableStock->risingSpeedView);
+    QWidget::setTabOrder(pTableStock->risingSpeedView, pTableStock->myStockView);
+    QWidget::setTabOrder(pTableStock->myStockView,pTableStock->stockTableView);
+
 
     QScreen* screen = QGuiApplication::primaryScreen();
+    
     searchSmallWindow=new QWidget(this);
     searchSmallWindow->setWindowFlag(Qt::Popup);
     int w=screen->size().width();
     int h=screen->size().height();
-    searchSmallWindow->setGeometry(w-450, h-435, 300, 350);
+    searchSmallWindow->setGeometry(w-450, h-435, 400, 350);
+
     QVBoxLayout *search =new QVBoxLayout(searchSmallWindow);
+    
     search->setContentsMargins(2, 2, 2, 2);
     searchSmallWindow->setLayout(search);
-    search->addWidget(searchStock.searchCodeLine);
-    search->addWidget(searchStock.matchCodeText);
+    search->addWidget(pSearchStock->searchCodeLine);
+    search->addWidget(pSearchStock->matchCodeText);
 
     F10SmallWindow=new QWidget(this);
     QWidget *F10Title=new QWidget(this);
@@ -365,7 +558,7 @@ void MainWindow::initSettings()
 
     QWidget *navigation=new QWidget(F10SmallWindow);
     f10ContentLayout->addWidget(navigation);
-    f10ContentLayout->addWidget(f10View.stockInfoView);
+    f10ContentLayout->addWidget(pF10View->stockInfoView);
     QVBoxLayout *navi=new QVBoxLayout(navigation);
     navigation->setLayout(navi);
     QStringList F10InfoName={"热度概念排名","主要指标","经营分析","资产负债表","利润表","现金流量表"};
@@ -379,26 +572,60 @@ void MainWindow::initBaseInfoLayout(QGridLayout *baseInfoLayout)
 {
     stockCode = new QLabel(this);
     stockName = new QLabel(this);
-    stockCode->setStyleSheet("QLabel{font:bold;color:blue}");
+    stockCode->setStyleSheet("QLabel{font:bold 18px;color:black}");
     stockName->setStyleSheet("QLabel{font:bold 26px;font-family:微软雅黑;color:red}");
     // baseInfoLayout->setVerticalSpacing(1);
     baseInfoLayout->addWidget(stockCode, 0, 0, 2, 1);
     baseInfoLayout->addWidget(stockName, 0, 1, 2, 3);
 
+    //QString lName[]={"现价", "涨幅","换手", "成交额", "总股本", "总市值", "市净率", "上涨总数","上涨5/8",
+    //                   "今开", "最高", "最低", "成交量(手)", "流通股", "", "", "下跌总数","下跌5/8"};
+					   
     QString lName[]={"现价", "涨幅","换手", "成交额", "总股本", "总市值", "市净率", "今开", "最高", "最低", "成交量(手)", "流通股", "", ""};
-
-    for (int i=0;i<14;++i)
+ 					   
+    QLabel *lblName;
+    /*for (int i=0;i<18;++i)
     {
-        QLabel *name=new QLabel(lName[i],this);
+        lblName=new QLabel(lName[i],this);
         baseInfoData[i]=new QLabel(this);
-        name->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(47,79,79)}");
+        lblName->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(47,79,79)}");
+        if ((i >= 2 and i <= 6) or (i >= 12 and i <= 15))
+            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}"); //rgb(72,61,139)blue
+        else if (i == 7 or i==8)
+        {
+            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:red}");
+//            name->setMaximumWidth(90);
+        }
+        else if (i == 16 or i==17)
+        {
+            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:green}");
+//            name->setMaximumWidth(90);
+        }
+        else
+            baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
+        if (i < 9)
+        {
+            baseInfoLayout->addWidget(lblName,i+2,0);
+            baseInfoLayout->addWidget(baseInfoData[i],i+2,1);
+        }
+        else if (i<18)
+        {
+            baseInfoLayout->addWidget(lblName,i-7,2);
+            baseInfoLayout->addWidget(baseInfoData[i],i-7,3);
+        }
+    }*/
+	for (int i=0;i<14;++i)
+    {
+        lblName=new QLabel(lName[i],this);
+        baseInfoData[i]=new QLabel(this);
+        lblName->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(47,79,79)}");
         if (i < 7)
         {
             if (i>1)
                 baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}");
             else
                 baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
-            baseInfoLayout->addWidget(name,i+2,0);
+            baseInfoLayout->addWidget(lblName,i+2,0);
             baseInfoLayout->addWidget(baseInfoData[i],i+2,1);
         }
         else if (i<14)
@@ -407,7 +634,7 @@ void MainWindow::initBaseInfoLayout(QGridLayout *baseInfoLayout)
                 baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px;color:blue}");
             else
                 baseInfoData[i]->setStyleSheet("QLabel{font:bold 14px}");
-            baseInfoLayout->addWidget(name,i-5,2);
+            baseInfoLayout->addWidget(lblName,i-5,2);
             baseInfoLayout->addWidget(baseInfoData[i],i-5,3);
         }
     }
@@ -450,24 +677,28 @@ void MainWindow::initBuySellLayout(QGridLayout *BuySellLayout)
     }
     buySellName[0]->setMinimumWidth(40);
     buySellPrice[0]->setMinimumWidth(45);
-    buySellNum[0]->setMinimumWidth(50);
+    buySellNum[0]->setMinimumWidth(40);
     QFrame *line=new QFrame(this);
     line->setStyleSheet("QFrame{/*background:yellow;*/min-height:2px;border-top:2px dotted gray}");
 //    line->setFrameShape(QFrame::HLine);
 //    line->setFrameShadow(QFrame::Sunken);
     BuySellLayout->addWidget(line,5,0,1,3);
 
-    mTableStock.timeShareTickView->setMinimumWidth(300);
-    BuySellLayout->addWidget(mTableStock.timeShareTickView,0,3,11,3);
+    pTableStock->timeShareTickView->setMinimumWidth(300);
+    BuySellLayout->addWidget(pTableStock->timeShareTickView,0,3,11,3);
 }
+
 void MainWindow::initFeelingLayout(QGridLayout *feelingLayout)
 {
     QString lName[]={"上涨总数:", "实际涨停:","上涨5/8:", "实时量能:", "下跌总数:", "实际跌停:", "下跌5/8:", "预测量能:"};
     QLabel *label1=new QLabel("市场情绪:");
     label1->setStyleSheet("QLabel{font:bold 26px;font-family:微软雅黑;}");
     dateEdit1->setCalendarPopup(true);
-    QDate t_=QDate::currentDate();
+
+    QDateTime curTime=m_pGlobalVar->curWorkDay();
+    QDate t_= curTime.date();
     dateEdit1->setDate(t_);
+
     dateEdit1->setMaximumDate(t_);
     dateEdit1->setFocusPolicy(Qt::NoFocus);
     feelingLayout->addWidget(label1,0,0,2,2);
@@ -493,84 +724,104 @@ void MainWindow::initFeelingLayout(QGridLayout *feelingLayout)
         }
     }
 }
+
 void MainWindow::initSignals()
 {
-    connect(mTableStock.stockTableView, &QTableView::clicked, this, [this](const QModelIndex &index){
+    connect(pTableStock->stockTableView, &QTableView::clicked, this, [this](const QModelIndex &index){
         int row=index.row();
-        if (GlobalVar::WhichInterface==4)
+        if (row<0 or row >=m_pTableList->size())  //fixed
+            return;
+
+        if (m_pGlobalVar->WhichInterface==FUNDFLOW)
         {
-            if(ifCanClick==1)
+            if(ifCanClick==CNCLICK)
             {
-                GlobalVar::curCode=GlobalVar::mTableList.at(row).code;
-                GlobalVar::curName=GlobalVar::mTableList.at(row).name;
+                m_pGlobalVar->curCode=m_pTableList->at(row).code;
+                m_pGlobalVar->curName=m_pTableList->at(row).name;
             }
-            else if(ifCanClick==2)
+            else if(ifCanClick==FUNDFLOWCLICK)
             {
-                GlobalVar::curCode=mFundFlow.model->item(row,0)->text();
-                GlobalVar::curName=mFundFlow.model->item(row,1)->text();
+                m_pGlobalVar->curCode= pFundFlow->model->item(row,0)->text();
+                m_pGlobalVar->curName= pFundFlow->model->item(row,1)->text();
             }
-            else if(ifCanClick==0)
+            else if(ifCanClick==NORMALCLICK)
             {
-                mFundFlow.isClick=true;
-                mFundFlow.getFundFlowChartData(mFundFlow.model->item(row,13)->text());
-                mFundFlow.fundFlowChart->setWindowTitle(mFundFlow.model->item(row,0)->text()+" 资金流图表");
-                mFundFlow.fundFlowChart->show();
-                mFundFlow.fundFlowChart->update();
-                mFundFlow.fundFlowChart->move(POSXCHART,POSYCHART);
-                mFundFlow.fundFlowChart->move(POSXCHART+1,POSYCHART);
+                pFundFlow->isClick=true;
+                pFundFlow->getFundFlowChartData( pFundFlow->model->item(row,13)->text());
+                pFundFlow->fundFlowChart->setWindowTitle( pFundFlow->model->item(row,0)->text()+" 资金流图表");
+                pFundFlow->fundFlowChart->show();
+                pFundFlow->fundFlowChart->update();
+                pFundFlow->fundFlowChart->move(POSXCHART,POSYCHART);
+                pFundFlow->fundFlowChart->move(POSXCHART+1,POSYCHART);
             }
         }
         else
         {
-            GlobalVar::curCode=GlobalVar::mTableList.at(row).code;
+            m_pGlobalVar->curCode=m_pTableList->at(row).code;
             emit startThreadTimeShareChart(false);
             emit startThreadTimeShareTick(false);
         }
     });
-    connect(mTableStock.risingSpeedView, &QTableView::clicked, this, [this](const QModelIndex &index){
+    connect(pTableStock->risingSpeedView, &QTableView::clicked, this, [this](const QModelIndex &index){
         int curRow=index.row();
-        GlobalVar::curCode=GlobalVar::mRisingSpeedList.at(curRow).code;
-//        GlobalVar::curName=GlobalVar::mRisingSpeedList.at(curRow).name;
+        if (curRow<0 or curRow >=m_pRisingSpeedList->size())  //fixed
+            return;
+        m_pGlobalVar->curCode= m_pRisingSpeedList->at(curRow).code;
+//        m_pGlobalVar->curName=m_pGlobalVar->mRisingSpeedList.at(curRow).name;
         emit startThreadTimeShareChart(false);
         emit startThreadTimeShareTick(false);
     });
-    connect(mTableStock.myStockView, &QTableView::clicked, this, [this](const QModelIndex &index){
+    connect(pTableStock->myStockView, &QTableView::clicked, this, [this](const QModelIndex &index){
         int curRow=index.row();
-        GlobalVar::curCode=GlobalVar::mMyStockList.at(curRow).code;
+        if (curRow<0 or curRow >=m_pMyStockList->size())  //fixed
+            return;
+        m_pGlobalVar->curCode= m_pMyStockList->at(curRow).code;
         emit startThreadTimeShareChart(false);
         emit startThreadTimeShareTick(false);
     });
-    // connect(mTableStock.blockView,&QTableView::clicked,this, [this](const QModelIndex &index){
+    // connect(pTableStock->blockView,&QTableView::clicked,this, [this](const QModelIndex &index){
     //     int row=index.row();
-    //     mFundFlow.isClick=true;
-    //     mFundFlow.getFundFlowChartData(GlobalVar::mFundFlowList.at(row)[13]);
-    //     mFundFlow.fundFlowChart->setWindowTitle(GlobalVar::mFundFlowList.at(row)[0]+" 资金流图表");
-    //     mFundFlow.fundFlowChart->show();
-    //     mFundFlow.fundFlowChart->update();
-    //     mFundFlow.fundFlowChart->move(859,150);
-    //     mFundFlow.fundFlowChart->move(860,150);
+    //     pFundFlow->isClick=true;
+    //     pFundFlow->getFundFlowChartData(m_pGlobalVar->mFundFlowList.at(row)[13]);
+    //     pFundFlow->fundFlowChart->setWindowTitle(m_pGlobalVar->mFundFlowList.at(row)[0]+" 资金流图表");
+    //     pFundFlow->fundFlowChart->show();
+    //     pFundFlow->fundFlowChart->update();
+    //     pFundFlow->fundFlowChart->move(859,150);
+    //     pFundFlow->fundFlowChart->move(860,150);
     // });
     connect(ui->ZHMarket,SIGNAL(triggered()),this,SLOT(setMarket()));
     connect(ui->HKMarket,SIGNAL(triggered()),this,SLOT(setMarket()));
     connect(ui->USMarket,SIGNAL(triggered()),this,SLOT(setMarket()));
     connect(ui->USzMarket,SIGNAL(triggered()),this,SLOT(setMarket()));
     connect(ui->UKMarket,SIGNAL(triggered()),this,SLOT(setMarket()));
-    connect(mTableStock.stockTableView, &QTableView::doubleClicked, this, [this](const QModelIndex &index){
-        if (GlobalVar::WhichInterface==4)
+    connect(pTableStock->stockTableView, &QTableView::doubleClicked, this, [this](const QModelIndex &index){
+        if (m_pGlobalVar->WhichInterface==FUNDFLOW)
         {
-            if (ifCanClick==0)
+            if (ifCanClick==NORMALCLICK)
             {
-                mFundFlow.getBoardStock(mFundFlow.FundFlowList.at(index.row())[0]);
-                mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-                mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
+                pFundFlow->getBoardStock(m_pTableList, pFundFlow->FundFlowList.at(index.row())[0]);
+                pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+                pTableStock->stockTableView->setModel(pTableStock->m_tableModel);
                 for (int i=0;i<16;++i)
-                    mTableStock.stockTableView->setColumnWidth(i,90);
-                ifCanClick=1;
+                    pTableStock->stockTableView->setColumnWidth(i,90);
+                ifCanClick=CNCLICK;
             }
-            else if(ifCanClick==1 or ifCanClick==2)
+            else if(ifCanClick==CNCLICK or ifCanClick==FUNDFLOWCLICK)
             {
-                GlobalVar::isKState=true;
-                emit startThreadCandleChart(freq,adjustFlag,true);
+                m_pGlobalVar->isKState=true;
+                bWantReqKline=true;
+                lastTime=QDateTime::currentDateTime();
+                bool bFirst;
+                if (m_PreCode != m_pGlobalVar->curCode )
+                {
+                    bFirst=true;
+                    m_PreCode=m_pGlobalVar->curCode;
+                }
+                else
+                {
+                    bFirst=false;
+                }
+                emit startThreadCandleChart(freq,adjustFlag,bFirst);
                 emit startThreadTimeShareTick(false);
                 emit startThreadTimeShareChart(false);
                 toInterFace("k");
@@ -580,72 +831,173 @@ void MainWindow::initSignals()
         }
         else
         {
-            GlobalVar::isKState=true;
-            emit startThreadCandleChart(freq,adjustFlag,true);
+            m_pGlobalVar->isKState=true;
+
+            lastTime=QDateTime::currentDateTime();
+            bWantReqKline=true;
+            bool bFirst;
+            if (m_PreCode != m_pGlobalVar->curCode )
+            {
+                bFirst=true;
+                m_PreCode=m_pGlobalVar->curCode;
+            }
+            else
+            {
+                bFirst=false;
+            }
+            emit startThreadCandleChart(freq,adjustFlag,bFirst);
             toInterFace("k");
         }
     });
-    connect(mTableStock.risingSpeedView, &QTableView::doubleClicked, this, [this](const QModelIndex &/*index*/){
-        GlobalVar::isKState=true;
+    connect(pTableStock->risingSpeedView, &QTableView::doubleClicked, this, [this](const QModelIndex &/*index*/){
+        m_pGlobalVar->isKState=true;
 //        int curRow=index.row();
-//        GlobalVar::curCode=GlobalVar::mRisingSpeedList.at(curRow).code;
-//        GlobalVar::curName=GlobalVar::mRisingSpeedList.at(curRow).name;
-        emit startThreadCandleChart(freq,adjustFlag,true);
+//        m_pGlobalVar->curCode=m_pGlobalVar->mRisingSpeedList.at(curRow).code;
+//        m_pGlobalVar->curName=m_pGlobalVar->mRisingSpeedList.at(curRow).name;
+
+        lastTime=QDateTime::currentDateTime();
+        bWantReqKline=true;
+        bool bFirst;
+        if (m_PreCode != m_pGlobalVar->curCode )
+        {
+            bFirst=true;
+            m_PreCode=m_pGlobalVar->curCode;
+        }
+        else
+        {
+            bFirst=false;
+        }
+        emit startThreadCandleChart(freq,adjustFlag, bFirst);
         toInterFace("k");
     });
-    connect(mTableStock.blockView, &QTableView::doubleClicked, this, [this](const QModelIndex &index){
-        mTableStock.isFlashTable=false;
-        GlobalVar::isBoard=true;
-        GlobalVar::curBoard=GlobalVar::mFundFlowList.at(index.row())[13];
-        searchStock.getBoardData();
-        if (not GlobalVar::mTableList.isEmpty())
-            mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-        mTableStock.isFlashTable=true;
+    connect(pTableStock->blockView, &QTableView::doubleClicked, this, [this](const QModelIndex &index){
+        pTableStock->isFlashTable=false;
+        m_pGlobalVar->isBoard=true;
+        m_pGlobalVar->curBoard=m_pFundFlowList->at(index.row())[13];
+        pSearchStock->getBoardData(m_pTableList);
+        if (not m_pTableList->isEmpty())
+            pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+        pTableStock->isFlashTable=true;
 
     });
-    connect(mTableStock.myStockView, &QTableView::doubleClicked, this, [this](const QModelIndex &/*index*/){
-        GlobalVar::isKState=true;
+    connect(pTableStock->myStockView, &QTableView::doubleClicked, this, [this](const QModelIndex &/*index*/){
+        m_pGlobalVar->isKState=true;
         isTraversalMyStock=true;
+
 //        int curRow=index.row();
-//        GlobalVar::curCode=GlobalVar::mMyStockList.at(curRow).code;
-//        GlobalVar::curName=GlobalVar::mMyStockList.at(curRow).name;
-        emit startThreadCandleChart(freq,adjustFlag,true);
+//        m_pGlobalVar->curCode=m_pGlobalVar->mMyStockList.at(curRow).code;
+//        m_pGlobalVar->curName=m_pGlobalVar->mMyStockList.at(curRow).name;
+        lastTime=QDateTime::currentDateTime();
+        bWantReqKline=true;
+        bool bFirst;
+        if (m_PreCode != m_pGlobalVar->curCode )
+        {
+            bFirst=true;
+            m_PreCode=m_pGlobalVar->curCode;
+        }
+        else
+        {
+            bFirst=false;
+        }
+        emit startThreadCandleChart(freq,adjustFlag,bFirst);
         toInterFace("k");
     });
-    // 信号发出，进行排序
-    connect(mTableStock.stockTableView->horizontalHeader(), &QHeaderView::sortIndicatorChanged, this, [this](int logicalIndex/*, Qt::SortOrder order*/) {
+
+    // 信号发出，stockTableView进行排序
+    connect(pTableStock->stockTableView->horizontalHeader(), &QHeaderView::sortIndicatorChanged, this, [this](int logicalIndex/*, Qt::SortOrder order*/) {
         //        bool is_asc;
-        if (GlobalVar::WhichInterface!=4 or(GlobalVar::WhichInterface==4 and ifCanClick==1))
+        if (m_pGlobalVar->WhichInterface!=FUNDFLOW or(m_pGlobalVar->WhichInterface==FUNDFLOW and ifCanClick==CNCLICK))
         {
-            if (GlobalVar::curSortNum!=logicalIndex)
+            if (m_pGlobalVar->curSortNum[0]!=logicalIndex)
             {
-                GlobalVar::is_asc = false;
-                GlobalVar::curSortNum=logicalIndex;
+                m_pGlobalVar->is_asc[0] = false;
+                m_pGlobalVar->curSortNum[0]=logicalIndex;
             }
             else
-                GlobalVar::is_asc = not preSort;
-            GlobalVar::sortByColumn(&GlobalVar::mTableList,logicalIndex,GlobalVar::is_asc);
-            preSort=GlobalVar::is_asc;
-            mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-            // mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
-            mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
-            mTableStock.stockTableView->scrollTo(mTableStock.m_tableModel->index(0,0));
+                m_pGlobalVar->is_asc[0] = not preSort[0];
+            sortByColumn(m_pTableList,logicalIndex,m_pGlobalVar->is_asc[0]);
+            preSort[0]=m_pGlobalVar->is_asc[0];
+            pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+            // pTableStock->stockTableView->setModel(pTableStock->m_tableModel);
+            pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(0,0));
+            pTableStock->stockTableView->scrollTo(pTableStock->m_tableModel->index(0,0));
         }
-//        else if (GlobalVar::WhichInterface==4 and ifCanClick==2)
+//        else if (m_pGlobalVar->WhichInterface==FUNDFLOW and ifCanClick==FUNDFLOWCLICK)
 //        {
-//            mFundFlow.model->sort(logicalIndex,Qt::DescendingOrder);
-//            mTableStock.stockTableView->setModel(mFundFlow.model);
-//            mTableStock.stockTableView->setCurrentIndex(mFundFlow.model->index(0,0));
+//            pFundFlow->model->sort(logicalIndex,Qt::DescendingOrder);
+//            pTableStock->stockTableView->setModel( pFundFlow->model);
+//            pTableStock->stockTableView->setCurrentIndex( pFundFlow->model->index(0,0));
 //        }
     });
-    connect(mTableStock.stockTableView,&QTableView::customContextMenuRequested,this,[=](QPoint){
-        if (GlobalVar::WhichInterface==1 or (GlobalVar::WhichInterface==4 and (ifCanClick==2 or ifCanClick==1)))
+
+   connect(pTableStock->blockView->horizontalHeader(), &QHeaderView::sortIndicatorChanged, this, [this](int logicalIndex/*, Qt::SortOrder order*/) {
+         if (m_pGlobalVar->WhichInterface!=FUNDFLOW or(m_pGlobalVar->WhichInterface==FUNDFLOW and ifCanClick==CNCLICK))
+        {
+            if (m_pGlobalVar->curSortNum[1]!=logicalIndex)
+            {
+                m_pGlobalVar->is_asc[1] = false;
+                m_pGlobalVar->curSortNum[1]=logicalIndex;
+            }
+            else
+                m_pGlobalVar->is_asc[1] = not preSort[1];
+
+            sortByStrColumn(m_pFundFlowList,logicalIndex,m_pGlobalVar->is_asc[1]);
+
+            preSort[1]=m_pGlobalVar->is_asc[1];
+            pTableStock->m_fundFlowModel->setModelData(*m_pFundFlowList,false);
+            pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(0,0));
+            pTableStock->blockView->scrollTo(pTableStock->m_fundFlowModel->index(0,0));
+        }
+
+    });
+
+    connect(pTableStock->risingSpeedView->horizontalHeader(), &QHeaderView::sortIndicatorChanged, this, [this](int logicalIndex/*, Qt::SortOrder order*/) {
+                     if (m_pGlobalVar->WhichInterface!=FUNDFLOW or(m_pGlobalVar->WhichInterface==FUNDFLOW and ifCanClick==CNCLICK))
+                    {
+                        if (m_pGlobalVar->curSortNum[2]!=logicalIndex)
+                        {
+                            m_pGlobalVar->is_asc[2] = false;
+                            m_pGlobalVar->curSortNum[2]=logicalIndex;
+                        }
+                        else
+                            m_pGlobalVar->is_asc[2] = not preSort[2];
+                        sortByColumn(m_pRisingSpeedList,logicalIndex,m_pGlobalVar->is_asc[2]);
+                        preSort[2]=m_pGlobalVar->is_asc[2];
+                        pTableStock->m_risingSpeedModel->setModelData(*m_pRisingSpeedList,false,true,false);
+                        pTableStock->risingSpeedView->setCurrentIndex(pTableStock->m_risingSpeedModel->index(0,0));
+                        pTableStock->risingSpeedView->scrollTo(pTableStock->m_risingSpeedModel->index(0,0));
+                    }
+
+    });
+
+   connect(pTableStock->myStockView->horizontalHeader(), &QHeaderView::sortIndicatorChanged, this, [this](int logicalIndex/*, Qt::SortOrder order*/) {
+         if (m_pGlobalVar->WhichInterface!=FUNDFLOW or(m_pGlobalVar->WhichInterface==FUNDFLOW and ifCanClick==CNCLICK))
+        {
+            if (m_pGlobalVar->curSortNum[3]!=logicalIndex)
+            {
+                m_pGlobalVar->is_asc[3] = false;
+                m_pGlobalVar->curSortNum[3]=logicalIndex;
+            }
+            else
+                m_pGlobalVar->is_asc[3] = not preSort[3];
+
+            sortByColumn(m_pMyStockList,logicalIndex,m_pGlobalVar->is_asc[3]);
+            preSort[3]=m_pGlobalVar->is_asc[3];
+            pTableStock->m_myStockModel->setModelData(*m_pMyStockList,false,true,true);
+            pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(0,0));
+            pTableStock->myStockView->scrollTo(pTableStock->m_myStockModel->index(0,0));
+        }
+    });
+    // ***进行排序-- end ------
+
+    connect(pTableStock->stockTableView,&QTableView::customContextMenuRequested,this,[=](QPoint){
+        if (m_pGlobalVar->WhichInterface==CNMARKET or (m_pGlobalVar->WhichInterface==FUNDFLOW and (ifCanClick==FUNDFLOWCLICK or ifCanClick==CNCLICK)))
             addRightMenu(1);
     });
-    connect(mTableStock.risingSpeedView,&QTableView::customContextMenuRequested,this,[=](QPoint){
+    connect(pTableStock->risingSpeedView,&QTableView::customContextMenuRequested,this,[=](QPoint){
         addRightMenu(2);
     });
-    connect(mTableStock.myStockView,&QTableView::customContextMenuRequested,this,[=](QPoint){
+    connect(pTableStock->myStockView,&QTableView::customContextMenuRequested,this,[=](QPoint){
         QMenu *menu=new QMenu(this);
         QAction *act=new QAction("删除自选",menu);
         menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -655,16 +1007,20 @@ void MainWindow::initSignals()
         menu->popup(QCursor::pos());
         connect(act,&QAction::triggered,this,&MainWindow::delMyStock);
     });
-    for (int i = 2; i<=16; i=i+2)
+
+    QPushButton *qButton;
+    QString IndexCode[]={"1.000001","399001","399006","100.HSI","100.N225","100.KS11","1.000688","100.TWII","100.SENSEX","100.DJIA",
+                           "100.SPX","100.NDX","100.SX5E","100.GDAXI","100.RTS","100.FTSE","100.FCHI","100.AS51","104.CN00Y","103.YM00Y",
+                           "133.USDCNH","122.XAU"};
+
+    for (int i = 2; i<=16; i+=2)
     {
-        QPushButton *bb = (QPushButton *)(ui->statusBar->children().at(i));
-        connect(bb,&QPushButton::clicked,this,[=](){
-            if (not drawChart.hisTimeShareChart->isHidden())
-                drawChart.hisTimeShareChart->close();
-            GlobalVar::isKState=true;
-            QString IndexCode[]={"1.000001","399001","399006","100.HSI","100.N225","100.KS11","1.000688","100.TWII","100.SENSEX","100.DJIA",
-                                "100.SPX","100.NDX","100.SX5E","100.GDAXI","100.RTS","100.FTSE","100.FCHI","100.AS51","104.CN00Y","103.YM00Y",
-                                "133.USDCNH","122.XAU"};
+        qButton = (QPushButton *)(ui->statusBar->children().at(i));
+          connect(qButton,&QPushButton::clicked,this,[=](){
+
+            if (not pDrawChart->hisTimeShareChart->isHidden())
+
+                pDrawChart->hisTimeShareChart->close();
             int n;
             if (isAsia)
             {
@@ -692,44 +1048,72 @@ void MainWindow::initSignals()
                 if (changeInTurn)
                     n=21;
                 else
-                    n=20;}
-//            qDebug()<<i<<n;
-            GlobalVar::curCode=IndexCode[n];
-            GlobalVar::curName=bb->text();
-            resetKParameter();
-            emit startThreadCandleChart(freq,adjustFlag,true);
+                    n=20;
+            }
+
+            if (n<0)
+                n=0;
+            if (n>21)
+                n=21;
+
+            m_pGlobalVar->curCode=IndexCode[n];
+            m_pGlobalVar->curName=qButton->text();
+           // resetKParameter();
+
+            lastTime=QDateTime::currentDateTime();
+            bWantReqKline=true;
+            bool bFirst;
+            if (m_PreCode != m_pGlobalVar->curCode )
+            {
+                bFirst=true;
+                m_PreCode=m_pGlobalVar->curCode;
+            }
+            else
+            {
+                bFirst=false;
+            }
+            emit startThreadCandleChart(freq,adjustFlag,bFirst);
             emit startThreadTimeShareChart(false);
             emit startThreadTimeShareTick(false);
-            toInterFace("k");
+            if ( !m_pGlobalVar->isKState){
+                toInterFace("k");
+            }
         });
     }
     connect(ui->newsReport,&QAction::triggered,this,[=](){
-        if (threadNewsReport->tts->state() == QTextToSpeech::Speaking)
-        {
-            threadNewsReport->tts->stop();
-            threadNewsReport->tts->resume();
-        }
-        GlobalVar::isSayNews=not GlobalVar::isSayNews;
-        if (GlobalVar::isSayNews)
+
+        m_pGlobalVar->isSayNews=not m_pGlobalVar->isSayNews;
+        if (m_pGlobalVar->isSayNews)
         {
             QIcon icon(":/new/png/png/report.png");
             ui->newsReport->setIcon(icon);
             ui->newsReport->setText("关闭语音播报");
+            if (threadNewsReport->tts->state() == QTextToSpeech::Paused)
+            {
+              threadNewsReport->tts->resume();
+            }
+            else
+               threadNewsReport->SpeechNow();
         }
         else
         {
+            if (threadNewsReport->tts->state() == QTextToSpeech::Speaking)
+            {
+                 threadNewsReport->tts->pause();
+            }
             QIcon icon(":/new/png/png/no_report.png");
             ui->newsReport->setIcon(icon);
             ui->newsReport->setText("打开语音播报");
         }
     });
+    
     connect(ui->fundFlow,&QAction::triggered,this,&MainWindow::dealWithFundFlow);
-    connect(&searchStock,SIGNAL(showSearch()),this,SLOT(showSearchResult()));
+    connect(pSearchStock,SIGNAL(showSearch()),this,SLOT(showSearchResult()));
     connect(ui->DLAllStockK,&QAction::triggered,this,[=](){
-        requestsToCsv.downloadAllStockK();
+        pRequestsToCsv->downloadAllStockK(m_pTableListCopy);
     });
     connect(ui->DLStockInfo,&QAction::triggered,this,[=](){
-        requestsToCsv.downStockIndexPlateInfo();
+        pRequestsToCsv->downStockIndexPlateInfo();
     });
     connect(F10Info[0],&QPushButton::clicked,this,[=](){
         toInterFace("f3");
@@ -745,44 +1129,53 @@ void MainWindow::initSignals()
     });
     connect(F10Info[2],&QPushButton::clicked,this,[=](){
         F10SmallWindow->setFixedSize(1470,700);
-        f10View.dealWithBusinessAnalysis();
+        pF10View->dealWithBusinessAnalysis();
     });
     connect(F10Info[3],&QPushButton::clicked,this,[=](){
         F10SmallWindow->setFixedSize(1330,700);
-        f10View.dealWithAssetLiability();
+        pF10View->dealWithAssetLiability();
     });
     connect(F10Info[4],&QPushButton::clicked,this,[=](){
         F10SmallWindow->setFixedSize(1430,700);
-        f10View.dealWithIncome();
+        pF10View->dealWithIncome();
     });
     connect(F10Info[5],&QPushButton::clicked,this,[=](){
         F10SmallWindow->setFixedSize(1430,700);
-        f10View.dealWithCashFlow();
+        pF10View->dealWithCashFlow();
     });
-    connect(f10View.stockInfoView,&QTableView::doubleClicked,this,[=](const QModelIndex &index){
-        GlobalVar::curBoard=f10View.model->item(index.row(),3)->text();
-        GlobalVar::isBoard=true;
-        searchStock.getBoardData();
-        if (GlobalVar::mTableList.isEmpty())
+    connect(pF10View->stockInfoView,&QTableView::doubleClicked,this,[=](const QModelIndex &index){
+        m_pGlobalVar->curBoard=pF10View->model->item(index.row(),3)->text();
+        m_pGlobalVar->isBoard=true;
+        pSearchStock->getBoardData(m_pTableList);
+        if (m_pTableList->isEmpty())
             return;
-        mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-        mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
-        mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
+        pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+        pTableStock->stockTableView->setModel(pTableStock->m_tableModel);
+        pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(0,0));
         toInterFace("main");
-        mTableStock.risingSpeedView->show();
-        mTableStock.myStockView->show();
+        pTableStock->risingSpeedView->show();
+        pTableStock->myStockView->show();
     });
     connect(ui->pickStock,&QAction::triggered,this,[=](){
-        mPickStock->PickStockInterface();
+        pPickStock->PickStockInterface();
     });
-    connect(mPickStock,&JSPickStock::updateTableList,this,[=](){
-        mTableStock.setTableView();
+    connect(pPickStock,&JSPickStock::updateTableList,this,[=](){
+        pTableStock->setTableView();
     });
     connect(ui->formula,&QAction::triggered,this,[=](){
+
+        if (!formulaMutex.tryLock())
+            return;
+
         QDialog *formulaDes=new QDialog(this);
+
+        connect(formulaDes,&QDialog::finished,this,[=](){
+             this->formulaMutex.unlock();
+        });
+
         formulaDes->setWindowTitle("编写公式说明");
         formulaDes->setGeometry(450, 200, 1000, 700);
-        formulaDes->setAttribute(Qt::WA_DeleteOnClose);
+        formulaDes->setAttribute(Qt::WA_DeleteOnClose);// 对话框关闭时删除
         QTextBrowser *des=new QTextBrowser(formulaDes);
         des->setMinimumHeight(380);
         des->setStyleSheet("QTextBrowser{font:bold 22px;font:bold}");
@@ -791,7 +1184,7 @@ void MainWindow::initSignals()
         mainLayout->setSpacing(0);
         formulaDes->setLayout(mainLayout);
         mainLayout->addWidget(des);
-        QFile file(GlobalVar::currentPath+"/list/formulades.txt");
+        QFile file(m_pGlobalVar->currentPath+"/list/formulades.txt");
         if (file.open(QFile::ReadOnly))
         {
             QTextCodec *codec = QTextCodec::codecForName("utf-8");
@@ -822,25 +1215,28 @@ void MainWindow::initSignals()
         file.close();
     });
     connect(ui->setVacation,&QAction::triggered,this,[=](){
-        if (GlobalVar::getVacation())
+        if (m_pGlobalVar->getVacation())
             QMessageBox::information(this,"提示", "设置成功。一年只需设置一次！", QMessageBox::Ok);
         else
             QMessageBox::information(this,"提示", "设置失败,请重试", QMessageBox::Ok);
-        // if (GlobalVar::settings->value("isSetVacation").toString()==QDateTime::currentDateTime().toString("yyyy"))
+        // if (m_pGlobalVar->settings->value("isSetVacation").toString()==QDateTime::currentDateTime().toString("yyyy"))
         //     ui->setVacation->setEnabled(false);
     });
     for (int i=0;i<9;++i)
     {
-        connect(mFundFlow.checkBox[i],&QCheckBox::clicked,this,[=](){
-            if (mFundFlow.checkBox[i]->isChecked())
-                mFundFlow.isShow[i]=true;
+        connect( pFundFlow->checkBox[i],&QCheckBox::clicked,this,[=](){
+            if ( pFundFlow->checkBox[i]->isChecked())
+                pFundFlow->isShow[i]=true;
             else
-                mFundFlow.isShow[i]=false;
-            mFundFlow.tableChart->update();
+                pFundFlow->isShow[i]=false;
+            pFundFlow->tableChart->update();
         });
+        //1: 1分钟  5: 5分钟 15: 15分钟  30: 30分钟 60: 60分钟
+        //101:日 102:周 103:月
+        //获取股票数据
         connect(periodAdjust[i],&QRadioButton::clicked,this,[=](){
             if (i==0)
-                 freq="1";
+                 freq="1";// freq="7";
             else if (i==1)
                 freq="5";
             else if (i==2)
@@ -852,16 +1248,29 @@ void MainWindow::initSignals()
             else if (i==5)
                 freq="103";
             else if (i==6)
-                adjustFlag="0";
+                adjustFlag="0";//股票除权
             else if (i==7)
-                adjustFlag="1";
+                adjustFlag="1";//前复权
             else if (i==8)
-                adjustFlag="2"; 
-            if (GlobalVar::isKState )
+                adjustFlag="2"; //后复权
+            if (m_pGlobalVar->isKState )
             {
-                preCode="";
-                //        resetKParameter();
-                emit startThreadCandleChart(freq,adjustFlag,true);
+                bool bFirst;
+                if (m_PreCode != m_pGlobalVar->curCode or qStrPreFreq!=freq or qStrPreAdjustFlag!=adjustFlag)
+                {
+                  bFirst=true;
+                  m_PreCode=m_pGlobalVar->curCode;
+                  qStrPreFreq=freq;
+                  qStrPreAdjustFlag=adjustFlag;
+                }
+                else //if (qStrFreq=freq or qStrPreAdjustFlag=adjustFlag)
+                {
+                  bFirst=false;
+                }
+                resetKParameter();
+                lastTime=QDateTime::currentDateTime();
+                bWantReqKline=true;
+                emit startThreadCandleChart(freq,adjustFlag,bFirst);
             }
         });
     }
@@ -873,441 +1282,540 @@ void MainWindow::initSignals()
     connect(ui->login,&QAction::triggered,this,[=](){
         if (QMTProcess->state()==QProcess::NotRunning)
         {
-            QString str = "D:\\Program Files\\Finance\\国金证券QMT交易端\\bin.x64\\XtMiniQmt.exe";
+           // QString str = "D:\\Program Files\\Finance\\国金证券QMT交易端\\bin.x64\\XtMiniQmt.exe";
+            QString str = "XtMiniQmt.exe";
             QString tagDir = "\"" + str + "\"";
             QMTProcess->startDetached(tagDir);
         }
         else
             QMessageBox::information(this,"提示", "交易已经启动", QMessageBox::Ok);
     });
-
-  connect(dateEdit1,SIGNAL(dateChanged(QDate)),this,SLOT(updateFeeling(QDate)));
- 
+	
+	  connect(dateEdit1,SIGNAL(dateChanged(QDate)),this,SLOT(updateFeeling(QDate)));
 }
 
-
-void MainWindow::min15Kline()
+void MainWindow::ontableViewclicked(const QModelIndex &index)
 {
-    freq="15";
-    preCode="";
-    //resetKParameter();
-    GlobalVar::isReqK=true;
-    lastTime=QDateTime::currentDateTime();
-    emit startThreadCandleChart(freq,adjustFlag,true);
+   QTableView *tableView  = qobject_cast<QTableView*>(sender());
+   if (tableView )
+   {
+      SelectedtableView=tableView;
+   }
+}
+void MainWindow::tableViewSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected) {
+    if (QTableView *tableView = qobject_cast<QTableView*>(sender())) {
+        SelectedtableView=tableView;
+    }
 }
 
-void MainWindow::min60Kline()
+void MainWindow::ChangeKline()
 {
-    freq="60";
-    preCode="";
-    //resetKParameter();
-    GlobalVar::isReqK=true;
+    QAction* pAction=qobject_cast<QAction*>(sender());
+    if (pAction==nullptr)
+        return;
+    int  type = pAction->data().value<int>();
+
+    switch(type)
+    {
+        case 1:
+          freq="1";
+          break;
+        case 2:
+          freq="5";
+          break;
+        case 3:
+          freq="15";
+          break;
+        case 4:
+            freq="30";
+            break;
+        case 5:
+            freq="60";
+            break;
+        case 6:
+            freq="101";
+            break;
+
+        case 7:
+            freq="102";
+            break;
+
+        case 8:
+            freq="103";
+            break;
+        case 9:
+            freq="104";
+            break;
+
+        case 10:
+            freq="105";
+            break;
+    }
+    bool bFirst=false;
+    if (qStrPreFreq!=freq)
+    {
+        qStrPreFreq=freq;
+        bFirst=true;
+    }
+    resetKParameter();
     lastTime=QDateTime::currentDateTime();
-    emit startThreadCandleChart(freq,adjustFlag,true);
+    bWantReqKline=true;
+    emit startThreadCandleChart(freq,adjustFlag,bFirst);
 }
 
-void MainWindow::quarterKline()
+void MainWindow::SelectTechAction()
 {
-    freq="104";
-    preCode="";
-    //resetKParameter();
-    GlobalVar::isReqK=true;
-    lastTime=QDateTime::currentDateTime();
-    emit startThreadCandleChart(freq,adjustFlag,true);
+     if (not m_pGlobalVar->isKState)
+        return;
+     
+    QAction *action = (QAction*)sender();
+     if (action==nullptr)
+        return;
+    QString actionText = action->text();
+        
+    if (actionText.contains("MACD"))
+    {
+        nTech=STT_MACD;
+    }
+    else if (actionText.contains("KDJ"))
+    {
+        nTech=STT_KDJ;
+    }
+    else if (actionText.contains("成交量"))
+    {
+        nTech=STT_VOLUME;
+    }
+   
+     pDrawChart->candleChart->update();
+    
 }
-
-void MainWindow::yearKline()
-{
-    freq="105";
-    preCode="";
-    //resetKParameter();
-    GlobalVar::isReqK=true;
-    lastTime=QDateTime::currentDateTime();
-    emit startThreadCandleChart(freq,adjustFlag,true);
-}
-
-
-
+    
 void MainWindow::saveCode()
 {
-    if (GlobalVar::curCode.length()!=5 and GlobalVar::curCode.left(1)!="1")
+    QString strRate= QString::number(m_pGlobalVar->speechrate);
+    m_pGlobalVar->settings->setValue("speechrate",strRate);
+
+    if (m_pGlobalVar->curCode.length()!=5 and m_pGlobalVar->curCode.left(1)!="1")
     {
-        GlobalVar::settings->setValue("curCode",GlobalVar::curCode);
-//        GlobalVar::settings->setValue("curName",GlobalVar::curName);
-        GlobalVar::settings->sync();
+        m_pGlobalVar->settings->setValue("curCode",m_pGlobalVar->curCode);
+//        m_pGlobalVar->settings->setValue("curName",m_pGlobalVar->curName);
+        m_pGlobalVar->settings->sync();
     }
 }
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
-    if (obj == mTableStock.stockTableView->verticalScrollBar() and event->type() == QEvent::Wheel)
+    if (obj == pTableStock->stockTableView->verticalScrollBar() and event->type() == QEvent::Wheel)
     {
         QWheelEvent *event1 = static_cast<QWheelEvent *>(event);
         int para=event1->angleDelta().y();
-        int tempStep=mTableStock.stockTableView->verticalScrollBar()->value();
-        int curIndex=mTableStock.stockTableView->currentIndex().row();
-        int row=mTableStock.stockTableView->height()/22+1;
+        int tempStep=pTableStock->stockTableView->verticalScrollBar()->value();
+        int curIndex=pTableStock->stockTableView->currentIndex().row();
+        if (curIndex==-1) curIndex=0; //fixed
+        int row=pTableStock->stockTableView->height()/22+1;
         if (para<0)
         {
-            mTableStock.stockTableView->verticalScrollBar()->setSliderPosition(tempStep+row);
-            if (curIndex>GlobalVar::mTableList.count()-row)
-                mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
+            pTableStock->stockTableView->verticalScrollBar()->setSliderPosition(tempStep+row);
+            if (curIndex>m_pTableList->count()-row)
+                pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(0,0));
             else
-                mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(curIndex+row,0));
+                pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(curIndex+row,0));
         }
         else
         {
-            mTableStock.stockTableView->verticalScrollBar()->setSliderPosition(tempStep-row);
+            pTableStock->stockTableView->verticalScrollBar()->setSliderPosition(tempStep-row);
             if (curIndex>=row)
-                mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(curIndex-row,0));
+                pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(curIndex-row,0));
             else
-                mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(GlobalVar::mTableList.count()-1,0));
+                pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(m_pTableList->count()-1,0));
 
         }
-//        qDebug()<<mTableStock.stockTableView->height();
+//        qDebug()<<pTableStock->stockTableView->height();
         return true;
     }
-    else if (obj==mTableStock.blockView->verticalScrollBar() and event->type() == QEvent::Wheel)
+    else if (obj==pTableStock->blockView->verticalScrollBar() and event->type() == QEvent::Wheel)
     {
         QWheelEvent *event1 = static_cast<QWheelEvent *>(event);
         int para=event1->angleDelta().y();
-        int tempStep=mTableStock.blockView->verticalScrollBar()->value();
-        int curIndex=mTableStock.blockView->currentIndex().row();
-        int row=mTableStock.blockView->height()/22;
+        int tempStep=pTableStock->blockView->verticalScrollBar()->value();
+        int curIndex=pTableStock->blockView->currentIndex().row();
+         if (curIndex==-1) curIndex=0; //fixed
+        int row=pTableStock->blockView->height()/22;
         if (para<0)
         {
-            mTableStock.blockView->verticalScrollBar()->setSliderPosition(tempStep+row);
-            if (curIndex>GlobalVar::mFundFlowList.count()-row)
-                mTableStock.blockView->setCurrentIndex(mTableStock.m_fundFlowModel->index(0,0));
+            pTableStock->blockView->verticalScrollBar()->setSliderPosition(tempStep+row);
+            if (curIndex>m_pFundFlowList->count()-row)
+                pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(0,0));
             else
-                mTableStock.blockView->setCurrentIndex(mTableStock.m_fundFlowModel->index(curIndex+row,0));
+                pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(curIndex+row,0));
         }
         else
         {
-            mTableStock.blockView->verticalScrollBar()->setSliderPosition(tempStep-row);
+            pTableStock->blockView->verticalScrollBar()->setSliderPosition(tempStep-row);
             if (curIndex>=row)
-                mTableStock.blockView->setCurrentIndex(mTableStock.m_fundFlowModel->index(curIndex-row,0));
+                pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(curIndex-row,0));
             else
-                mTableStock.blockView->setCurrentIndex(mTableStock.m_fundFlowModel->index(GlobalVar::mFundFlowList.count()-1,0));
+                pTableStock->blockView->setCurrentIndex(pTableStock->m_fundFlowModel->index(m_pFundFlowList->count()-1,0));
         }
-        //        qDebug()<<mTableStock.stockTableView->height();
+        //        qDebug()<<pTableStock->stockTableView->height();
         return true;
     }
-    else if (obj==mTableStock.myStockView and event->type()==QEvent::KeyPress)
+    else if ((obj==pTableStock->myStockView or
+                obj==pTableStock->stockTableView or
+                obj==pTableStock->risingSpeedView or
+                obj==pTableStock->blockView
+                ) and event->type()==QEvent::KeyPress)
     {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        QKeySequence key=keyEvent->key();
         if ((keyEvent->key() >= 48 and keyEvent->key() <= 57) or (keyEvent->key() >= 65 and keyEvent->key() <= 90))
         {
             searchSmallWindow->show();
-            searchStock.searchCodeLine->setText(keyEvent->text());
-            searchStock.searchCodeLine->setFocus();
-            searchStock.matchCodeText->moveCursor(QTextCursor::Start);
+            pSearchStock->searchCodeLine->setText(keyEvent->text());
+            pSearchStock->searchCodeLine->setFocus();
+            pSearchStock->matchCodeText->moveCursor(QTextCursor::Start);
+            return true;
         }
-    }
-    else if (obj==drawChart.timeShareChart)
-    {
-        if (event->type() == QEvent::Paint)
+        else if (key==Qt::Key_Down or key==Qt::Key_PageDown)
         {
-            QPainter *painter=new QPainter(drawChart.timeShareChart);
-            drawChart.drawTimeShareChart(painter);
-            delete painter;
+            KeyMoveUpOrDown(1);
+        }
+        else if (key==Qt::Key_Up or key==Qt::Key_PageUp)
+        {
+            KeyMoveUpOrDown(-1);
+        }
+        else if ( key==Qt::Key_Tab)
+        {
+          //  SelectedtableView=qobject_cast<QTableView*>(sender());
+            if (obj==pTableStock->stockTableView ){
+              SelectedtableView=pTableStock->blockView;
+              SelectedtableView->setFocus();
+              return true;
+            }
+            else if (obj==pTableStock->blockView){
+                SelectedtableView=pTableStock->risingSpeedView;
+                SelectedtableView->setFocus();
+                return true;
+            }
+            else if (obj==pTableStock->risingSpeedView){
+                SelectedtableView=pTableStock->myStockView;
+                SelectedtableView->setFocus();
+                return true;
+            }
+            else if (obj==pTableStock->myStockView)
+            {
+                SelectedtableView=pTableStock->stockTableView;
+                SelectedtableView->setFocus();
+                return true;
+            }
+        }
+
+    }
+    else if (obj==pDrawChart->timeShareChart)
+    {
+        if (event->type() == QEvent::Paint )
+        {
+            QPainter painter(pDrawChart->timeShareChart);
+            pDrawChart->drawTimeShareChart(m_pTimeShareChartList,&painter);
+            return true;
         }
         else if(event->type()==QEvent::MouseMove)
         {
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            //        float price=GlobalVar::timeShareHighLowPoint[0]-(GlobalVar::timeShareHighLowPoint[0]-GlobalVar::timeShareHighLowPoint[1])*(mouseEvent->pos().ry()-TOPHEIGHTEDGE)/(drawChart.timeShareChart->height()*12/15-2*TOPHEIGHTEDGE);
-            //        timeSharePrice->setText(QString::number((1+price/100)*GlobalVar::preClose,'f',2)+"("+QString::number(price,'f',2)+")%");
-            int n=int(mouseEvent->pos().rx()*GlobalVar::trendsTotal/(drawChart.timeShareChart->width()-2*WIDTHEDGE))-1;
-            if (n<0 or n>GlobalVar::mTimeShareChartList.size()-1 or
-                mouseEvent->pos().ry()<TOPHEIGHTEDGE or
-                mouseEvent->pos().ry()>drawChart.timeShareChart->height()-BOTTOMHEIGHTEDGE)
+            QPoint mPos = mouseEvent->pos();
+            //        float price=m_pGlobalVar->timeShareHighLowPoint[0]-(m_pGlobalVar->timeShareHighLowPoint[0]-m_pGlobalVar->timeShareHighLowPoint[1])*(mouseEvent->pos().ry()-TOPHEIGHTEDGE)/(pDrawChart->timeShareChart->height()*12/15-2*TOPHEIGHTEDGE);
+            //        timeSharePrice->setText(QString::number((1+price/100)*m_pGlobalVar->preClose,'f',2)+"("+QString::number(price,'f',2)+")%");
+            int n=int( mPos.rx()*m_pGlobalVar->trendsTotal/(pDrawChart->TimeChartWidth()-2*WIDTHEDGE))-1;
+            if (n<0 or n>m_pTimeShareChartList->size()-1 or mPos.ry()<TOPHEIGHTEDGE or mPos.ry()>pDrawChart->TimeChartBottom())
             {
-                drawChart.timeSharePrice->hide();
-                drawChart.timeShareVol->hide();
-                drawChart.timeShareTime->hide();
-                drawChart.vLine.hide();
-                drawChart.hLine.hide();
+                pDrawChart->lbltimeSharePrice->hide();
+                pDrawChart->lbltimeShareVol->hide();
+                pDrawChart->lbltimeShareTime->hide();
+                pDrawChart->vlblLine.hide();
+                pDrawChart->hlblLine.hide();
                 return false;
             }
-            drawChart.vLine.setStyleSheet("QLabel{border:2px dotted white;}");
-            drawChart.vLine.resize(1,drawChart.timeShareChart->height()-BOTTOMHEIGHTEDGE);
-            drawChart.hLine.setStyleSheet("QLabel{border:2px dotted white;}");
-            drawChart.hLine.resize(drawChart.timeShareChart->width()-2*WIDTHEDGE,1);
-            float p=GlobalVar::mTimeShareChartList.at(n).price;
-            if (p>0)
-                drawChart.timeSharePrice->setStyleSheet("color:red;font:bold;font-size:18px");
-            else if (p<0)
-                drawChart.timeSharePrice->setStyleSheet("color:rgb(0,255,0);font:bold;font-size:18px");
+            pDrawChart->vlblLine.setStyleSheet("QLabel{border:2px dotted white;}");
+            pDrawChart->vlblLine.resize(1,pDrawChart->TimeChartBottom());
+            pDrawChart->hlblLine.setStyleSheet("QLabel{border:2px dotted white;}");
+            pDrawChart->hlblLine.resize(pDrawChart->TimeChartWidth()-2*WIDTHEDGE,1);
+            float price=m_pTimeShareChartList->at(n).price;
+            float per =(price-m_pGlobalVar->preClose)*100.0f/m_pGlobalVar->preClose;
+            if ( per>0)
+                pDrawChart->lbltimeSharePrice->setStyleSheet("color:red;font:bold;font-size:18px");
+            else if (per<0)
+                pDrawChart->lbltimeSharePrice->setStyleSheet("color:rgb(0,255,0);font:bold;font-size:18px");
             else
-                drawChart.timeSharePrice->setStyleSheet("color:yellow;font:bold;font-size:18px");
-            float price=(1+p/100)*GlobalVar::preClose;
-            int x=(drawChart.timeShareChart->width()-2*WIDTHEDGE)*n/GlobalVar::trendsTotal+WIDTHEDGE;
-            int y=(GlobalVar::timeShareHighLowPoint[0]-p)*(drawChart.timeShareChart->height()*12/15-2*TOPHEIGHTEDGE)/(GlobalVar::timeShareHighLowPoint[0]-GlobalVar::timeShareHighLowPoint[1])+TOPHEIGHTEDGE;
+                pDrawChart->lbltimeSharePrice->setStyleSheet("color:yellow;font:bold;font-size:18px");
+            //float price=(1+p/100)*m_pGlobalVar->preClose;
+            int x=(pDrawChart->TimeChartWidth()-2*WIDTHEDGE)*n/m_pGlobalVar->trendsTotal+WIDTHEDGE;
+            int y=(m_pGlobalVar->timeShareHighLowPoint[0]-price)*(pDrawChart->TimeChartHeight())/(m_pGlobalVar->timeShareHighLowPoint[0]-m_pGlobalVar->timeShareHighLowPoint[1])+TOPHEIGHTEDGE;
             //        qDebug()<<x<<y;
-            drawChart.timeSharePrice->setText(QString::number(price,'f',2)+"("+QString::number(p)+"%)");
-            drawChart.timeShareVol->setText(GlobalVar::format_conversion(GlobalVar::mTimeShareChartList.at(n).vol));
-            drawChart.timeShareTime->setText(GlobalVar::mTimeShareChartList.at(n).time.right(5));
-            drawChart.timeSharePrice->adjustSize();
-            drawChart.timeShareVol->adjustSize();
-            drawChart.timeSharePrice->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.timeSharePrice->width()/(drawChart.timeShareChart->width()-2*WIDTHEDGE),95);
-            drawChart.timeShareVol->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.timeShareVol->width()/(drawChart.timeShareChart->width()-2*WIDTHEDGE),250);
-            drawChart.timeShareTime->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.timeShareTime->width()/(drawChart.timeShareChart->width()-2*WIDTHEDGE),220);
-            drawChart.vLine.move(x,0);
-            drawChart.hLine.move(0,y);
-            drawChart.timeSharePrice->show();
-            drawChart.timeShareVol->show();
-            drawChart.timeShareTime->show();
-            drawChart.vLine.show();
-            drawChart.hLine.show();
+            pDrawChart->lbltimeSharePrice->setText(QString::number(price,'f',2)+"("+QString::number(per)+"%)");
+            pDrawChart->lbltimeShareVol->setText(format_conversion(m_pTimeShareChartList->at(n).vol));
+            pDrawChart->lbltimeShareTime->setText(m_pTimeShareChartList->at(n).time.right(5));
+            pDrawChart->lbltimeSharePrice->adjustSize();
+            pDrawChart->lbltimeShareVol->adjustSize();
+            pDrawChart->lbltimeSharePrice->move( mPos.rx()-( mPos.x()-WIDTHEDGE)*pDrawChart->lbltimeSharePrice->width()/(pDrawChart->TimeChartWidth()-2*WIDTHEDGE),95);
+            pDrawChart->lbltimeShareVol->move( mPos.rx()-( mPos.x()-WIDTHEDGE)*pDrawChart->lbltimeShareVol->width()/(pDrawChart->TimeChartWidth()-2*WIDTHEDGE),250);
+            pDrawChart->lbltimeShareTime->move( mPos.rx()-( mPos.x()-WIDTHEDGE)*pDrawChart->lbltimeShareTime->width()/(pDrawChart->TimeChartWidth()-2*WIDTHEDGE),220);
+            pDrawChart->vlblLine.move(x,0);
+            pDrawChart->hlblLine.move(0,y);
+            pDrawChart->lbltimeSharePrice->show();
+            pDrawChart->lbltimeShareVol->show();
+            pDrawChart->lbltimeShareTime->show();
+            pDrawChart->vlblLine.show();
+            pDrawChart->hlblLine.show();
+             return true;
         }
         else if (event->type()==QEvent::Leave)
         {
-            drawChart.timeSharePrice->hide();
-            drawChart.timeShareVol->hide();
-            drawChart.timeShareTime->hide();
-            drawChart.vLine.hide();
-            drawChart.hLine.hide();
+            pDrawChart->lbltimeSharePrice->hide();
+            pDrawChart->lbltimeShareVol->hide();
+            pDrawChart->lbltimeShareTime->hide();
+            pDrawChart->vlblLine.hide();
+            pDrawChart->hlblLine.hide();
+             return true;
         }
-        return true;
+
     }
-    else if (obj==mFundFlow.tableChart)
+    else if (obj== pFundFlow->tableChart)
     {
         if (event->type() == QEvent::Paint)
         {
-            QPainter *painter=new QPainter(mFundFlow.tableChart);
-            mFundFlow.drawIntervalHighLowChart(painter);
-            delete painter;
-        }
-        return true;
+            QPainter painter( pFundFlow->tableChart);
+            pFundFlow->drawIntervalHighLowChart(&painter);
+            return true;
+        }       
     }
-    else if (obj==mFundFlow.fundFlowChart)
+    else if (obj== pFundFlow->fundFlowChart)
     {
         if (event->type() == QEvent::Paint)
         {
-            QPainter *painter=new QPainter(mFundFlow.fundFlowChart);
-            painter->setRenderHint(QPainter::Antialiasing);
-            mFundFlow.drawFundFlowChart(painter);
-            delete painter;
+            QPainter painter( pFundFlow->fundFlowChart);
+            painter.setRenderHint(QPainter::Antialiasing);
+            pFundFlow->drawFundFlowChart(&painter);
+            return true;// fixed 2024.10.7
         }
         else if(event->type()==QEvent::MouseMove)
         {
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            int maxNums=mFundFlow.fundFlowKList.count();
-
-            int maxHNums=mFundFlow.fundFlowHKList.count();
-            int aveHW=mFundFlow.fundFlowChart->width()/2/maxHNums;
-            if (mouseEvent->pos().rx()>10 and
-                mouseEvent->pos().rx()<mFundFlow.fundFlowChart->width()/2-10 and
-                mouseEvent->pos().ry()>0 and
-                mouseEvent->pos().ry()<(mFundFlow.fundFlowChart->height()-150)/2)
+            int maxNums= pFundFlow->fundFlowKList.count();
+            QPoint mPos = mouseEvent->pos();
+            int maxHNums= pFundFlow->fundFlowHKList.count();
+            int aveHW= pFundFlow->fundFlowChart->width()/2/maxHNums;
+            if (mPos.rx()>10 and
+                mPos.rx()< pFundFlow->fundFlowChart->width()/2-10 and
+                mPos.ry()>0 and mPos.ry()<( pFundFlow->fundFlowChart->height()-150)/2)
             {
                 int n=0;
                 if (maxNums!=0)
                 {
-                    int aveW=mFundFlow.fundFlowChart->width()/2/maxNums;
-                    n=(mouseEvent->pos().rx()-10)/aveW;
+                    int aveW= pFundFlow->fundFlowChart->width()/2/maxNums;
+                    n=(mPos.rx()-10)/aveW;
                 }
-                if (maxNums-1>=n)
+                if ((maxNums-1)>=n )
                 {
-                    mFundFlow.vKLine->show();
-                    mFundFlow.vKLine->move(mouseEvent->pos().rx(),0);
-                    mFundFlow.time->setText(mFundFlow.fundFlowKList.at(n)[0]);
-                    if (mFundFlow.fundFlowKList.at(n)[1].toFloat()<0)
-                        mFundFlow.textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                    pFundFlow->vKLine->show();
+                    pFundFlow->vKLine->move(mPos.rx(),0);
+                    pFundFlow->time->setText( pFundFlow->fundFlowKList.at(n)[0]);
+                    if ( pFundFlow->fundFlowKList.at(n)[1].toFloat()<0)
+                        pFundFlow->textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                     else
-                        mFundFlow.textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                        pFundFlow->textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
 
-                    mFundFlow.textFund[0]->setText(GlobalVar::format_conversion(mFundFlow.fundFlowKList.at(n)[1].toFloat()));
+                    pFundFlow->textFund[0]->setText(format_conversion( pFundFlow->fundFlowKList.at(n)[1].toFloat()));
                     for (int i=1;i<5;++i)
                     {
-                        if (mFundFlow.fundFlowKList.at(n)[6-i].toFloat()<0)
-                            mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                        if ( pFundFlow->fundFlowKList.at(n)[6-i].toFloat()<0)
+                            pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                         else
-                            mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
-                        mFundFlow.textFund[i]->setText(GlobalVar::format_conversion(mFundFlow.fundFlowKList.at(n)[6-i].toFloat()));
+                            pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                        pFundFlow->textFund[i]->setText(format_conversion( pFundFlow->fundFlowKList.at(n)[6-i].toFloat()));
                     }
                 }
                 else
-                    mFundFlow.vKLine->hide();
+                    pFundFlow->vKLine->hide();
             }
-            else if (mouseEvent->pos().rx()>5 and
-                       mouseEvent->pos().rx()<mFundFlow.fundFlowChart->width()/2-15 and
-                       mouseEvent->pos().ry()>(mFundFlow.fundFlowChart->height()+70)/2 and
-                       mouseEvent->pos().ry()<mFundFlow.fundFlowChart->height()-40)
+            else if (mPos.rx()>5 and
+                       mPos.rx()< pFundFlow->fundFlowChart->width()/2-15 and
+                       mPos.ry()>( pFundFlow->fundFlowChart->height()+70)/2 and
+                       mPos.ry()< pFundFlow->fundFlowChart->height()-40)
             {
-                int n=(mouseEvent->pos().rx()-5)/aveHW;
-                if (n>=maxHNums)
+                int n=(mPos.rx()-5)/aveHW;
+                if (n>=maxHNums )
                     return false;
-                mFundFlow.vKLine->show();
-                mFundFlow.vKLine->move(mouseEvent->pos().rx(),435);
-                mFundFlow.time->setText(mFundFlow.fundFlowHKList.at(n)[0]);
-                if (mFundFlow.fundFlowHKList.at(n)[1].toFloat()<0)
-                    mFundFlow.textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                pFundFlow->vKLine->show();
+                pFundFlow->vKLine->move(mPos.rx(),435);
+                pFundFlow->time->setText( pFundFlow->fundFlowHKList.at(n)[0]);
+                if ( pFundFlow->fundFlowHKList.at(n)[1].toFloat()<0)
+                    pFundFlow->textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                 else
-                    mFundFlow.textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
-                mFundFlow.textFund[0]->setText(GlobalVar::format_conversion(mFundFlow.fundFlowHKList.at(n)[1].toFloat()));
+                    pFundFlow->textFund[0]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                pFundFlow->textFund[0]->setText(format_conversion( pFundFlow->fundFlowHKList.at(n)[1].toFloat()));
                 for (int i=1;i<5;++i)
                 {
-                    if (mFundFlow.fundFlowHKList.at(n)[6-i].toFloat()<0)
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                    if ( pFundFlow->fundFlowHKList.at(n)[6-i].toFloat()<0)
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                     else
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
-                    mFundFlow.textFund[i]->setText(GlobalVar::format_conversion(mFundFlow.fundFlowHKList.at(n)[6-i].toFloat()));
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                    pFundFlow->textFund[i]->setText(format_conversion( pFundFlow->fundFlowHKList.at(n)[6-i].toFloat()));
                 }
             }
-            else if (mouseEvent->pos().rx()>mFundFlow.fundFlowChart->width()/2 and
-                       mouseEvent->pos().rx()<mFundFlow.fundFlowChart->width()-15 and
-                       mouseEvent->pos().ry()>(mFundFlow.fundFlowChart->height()+70)/2 and
-                       mouseEvent->pos().ry()<mFundFlow.fundFlowChart->height()-205)
+            else if (mPos.rx()> pFundFlow->fundFlowChart->width()/2 and
+                       mPos.rx()< pFundFlow->fundFlowChart->width()-15 and
+                       mPos.ry()>( pFundFlow->fundFlowChart->height()+70)/2 and
+                       mPos.ry()< pFundFlow->fundFlowChart->height()-205)
             {
-                mFundFlow.time->setText("一周5日资金流入");
+                pFundFlow->time->setText("一周5日资金流入");
                 for (int i=0;i<5;++i)
                 {
-                    if (mFundFlow.fiveTotal[i]<0)
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                    if ( pFundFlow->fiveTotal[i]<0)
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                     else
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
 
-                    mFundFlow.textFund[i]->setText(GlobalVar::format_conversion(mFundFlow.fiveTotal[i]));
+                    pFundFlow->textFund[i]->setText(format_conversion( pFundFlow->fiveTotal[i]));
                 }
             }
-            else if (mouseEvent->pos().rx()>mFundFlow.fundFlowChart->width()/2 and
-                       mouseEvent->pos().rx()<mFundFlow.fundFlowChart->width()-15 and
-                       mouseEvent->pos().ry()>mFundFlow.fundFlowChart->height()-205 and
-                       mouseEvent->pos().ry()<mFundFlow.fundFlowChart->height()-40)
+            else if (mPos.rx()> pFundFlow->fundFlowChart->width()/2 and
+                       mPos.rx()< pFundFlow->fundFlowChart->width()-15 and
+                      mPos.ry()> pFundFlow->fundFlowChart->height()-205 and
+                       mPos.ry()< pFundFlow->fundFlowChart->height()-40)
             {
-                mFundFlow.time->setText("一月20日资金流入");
+                pFundFlow->time->setText("一月20日资金流入");
                 for (int i=0;i<5;++i)
                 {
-                    if (mFundFlow.twentyTotal[i]<0)
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
+                    if ( pFundFlow->twentyTotal[i]<0)
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(0,191,0)}");
                     else
-                        mFundFlow.textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
-                    mFundFlow.textFund[i]->setText(GlobalVar::format_conversion(mFundFlow.twentyTotal[i]));
+                        pFundFlow->textFund[i]->setStyleSheet("QLabel{font:bold 16px;font:bold;font-family:微软雅黑;color:rgb(255,0,0)}");
+                    pFundFlow->textFund[i]->setText(format_conversion( pFundFlow->twentyTotal[i]));
                 }
             }
-            else if ((mouseEvent->pos().rx()-760)*(mouseEvent->pos().rx()-760)+
-                           (mouseEvent->pos().ry()-175)*(mouseEvent->pos().ry()-175)<=125*125)
+            else if ((mPos.rx()-760)*(mPos.rx()-760)+
+                           (mPos.ry()-175)*(mPos.ry()-175)<=125*125)
             {
-                float degree=90-atan2(175-mouseEvent->pos().ry(),760-mouseEvent->pos().rx())*180/PI;
+                float degree=90-atan2(175-mPos.ry(),760-mPos.rx())*180/PI;
                 if (degree<0)
                     degree+=360;
-                if (degree<mFundFlow.degree[0])
-                    mFundFlow.whichPiece=1;
-                else if (degree<mFundFlow.degree[1])
-                    mFundFlow.whichPiece=2;
-                else if (degree<mFundFlow.degree[2])
-                    mFundFlow.whichPiece=3;
-                else if (degree<mFundFlow.degree[3])
-                    mFundFlow.whichPiece=4;
-                else if (degree<mFundFlow.degree[4])
-                    mFundFlow.whichPiece=5;
-                else if (degree<mFundFlow.degree[5])
-                    mFundFlow.whichPiece=6;
-                else if (degree<mFundFlow.degree[6])
-                    mFundFlow.whichPiece=7;
+                if (degree< pFundFlow->degree[0])
+                    pFundFlow->whichPiece=1;
+                else if (degree< pFundFlow->degree[1])
+                    pFundFlow->whichPiece=2;
+                else if (degree< pFundFlow->degree[2])
+                    pFundFlow->whichPiece=3;
+                else if (degree< pFundFlow->degree[3])
+                    pFundFlow->whichPiece=4;
+                else if (degree< pFundFlow->degree[4])
+                    pFundFlow->whichPiece=5;
+                else if (degree< pFundFlow->degree[5])
+                    pFundFlow->whichPiece=6;
+                else if (degree< pFundFlow->degree[6])
+                    pFundFlow->whichPiece=7;
                 else
-                    mFundFlow.whichPiece=8;
-                mFundFlow.fundFlowChart->update();
+                    pFundFlow->whichPiece=8;
+                pFundFlow->fundFlowChart->update();
             }
             else
             {
-                mFundFlow.whichPiece=-1;
-                mFundFlow.vKLine->hide();
-                mFundFlow.fundFlowChart->update();
+                pFundFlow->whichPiece=-1;
+                pFundFlow->vKLine->hide();
+                pFundFlow->fundFlowChart->update();
             }
-            mFundFlow.fundFlowChart->move(POSXCHART,POSYCHART);
-            mFundFlow.fundFlowChart->move(POSXCHART+1,POSYCHART);
+            pFundFlow->fundFlowChart->move(POSXCHART,POSYCHART);
+            pFundFlow->fundFlowChart->move(POSXCHART+1,POSYCHART);
         }
         else if (event->type()==QEvent::Leave)
         {
-            mFundFlow.vKLine->hide();
-            mFundFlow.fundFlowChart->move(POSXCHART,POSYCHART);
-            mFundFlow.fundFlowChart->move(POSXCHART+1,POSYCHART);
+            pFundFlow->vKLine->hide();
+            pFundFlow->fundFlowChart->move(POSXCHART,POSYCHART);
+            pFundFlow->fundFlowChart->move(POSXCHART+1,POSYCHART);
         }
         else if (event->type()==QEvent::KeyPress)
         {
             QKeyEvent *event1 = static_cast<QKeyEvent *>(event);
             if (event1->key()==Qt::Key_Escape)
-                mFundFlow.fundFlowChart->close();
+                pFundFlow->fundFlowChart->close();
         }
         return true;
     }
-    else if (obj==drawChart.hisTimeShareChartTitle)
+    else if (obj==pDrawChart->hisTimeShareChartTitle)
     {
         if (event->type()==QEvent::MouseButtonPress)
         {
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            drawChart.isMoveHisTimeShareChart=true;
+            pDrawChart->isMoveHisTimeShareChart=true;
             p=mouseEvent->pos();
         }
         else if (event->type()==QEvent::MouseMove)
         {
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            if (drawChart.isMoveHisTimeShareChart)
-                drawChart.hisTimeShareChart->move((mouseEvent->scenePosition()-p).rx(),(mouseEvent->scenePosition()-p).ry());
+            if (pDrawChart->isMoveHisTimeShareChart)
+                pDrawChart->hisTimeShareChart->move((mouseEvent->scenePosition()-p).rx(),(mouseEvent->scenePosition()-p).ry());
         }
         else if (event->type()==QEvent::MouseButtonRelease)
         {
-            drawChart.isMoveHisTimeShareChart=false;
+            pDrawChart->isMoveHisTimeShareChart=false;
         }
         return true;
     }
-    else if (obj==drawChart.hisTimeShareChartView)
+    else if (obj==pDrawChart->hisTimeShareChartView)
     {
         if (event->type() == QEvent::Paint)
         {
-            QPainter *painter=new QPainter(drawChart.hisTimeShareChartView);
-            drawChart.drawHisTimeShare(painter);
-            delete painter;
+            QPainter painter(pDrawChart->hisTimeShareChartView);
+            pDrawChart->drawHisTimeShare(m_pHisTimeShareChartList,&painter);
+            return true;// fixed 2024.10.7
         }
         else if (event->type()==QEvent::MouseMove)
         {
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            int n=int(mouseEvent->pos().rx()*(GlobalVar::mHisTimeShareChartList.size())/(drawChart.hisTimeShareChartView->width()-2*WIDTHEDGE));
-
-            if (n<0 or n>GlobalVar::mHisTimeShareChartList.size()-1 or
-                mouseEvent->pos().ry()<TOPHEIGHTEDGE or
-                mouseEvent->pos().ry()>drawChart.hisTimeShareChartView->height()-BOTTOMHEIGHTEDGE)
+            QPoint mPos = mouseEvent->pos();
+            int nHisTimeSize = m_pHisTimeShareChartList->size();
+            int n=int(mPos.rx()* nHisTimeSize/(pDrawChart->HisTimeChartWidth()));
+            if (n<0 or n> nHisTimeSize -1 or
+                mPos.ry()<TOPHEIGHTEDGE or
+                mPos.ry()>pDrawChart->hisTimeShareChartView->height()-BOTTOMHEIGHTEDGE)
             {
-                drawChart.hisTimeSharePrice->hide();
-                drawChart.hisTimeShareVol->hide();
-                drawChart.hisTimeShareTime->hide();
-                drawChart.vHisLine.hide();
-                drawChart.hHisLine.hide();
+                pDrawChart->lblhisTimeSharePrice->hide();
+                pDrawChart->lblhisTimeShareVol->hide();
+                pDrawChart->lblhisTimeShareTime->hide();
+                pDrawChart->vlblHisLine.hide();
+                pDrawChart->hlblHisLine.hide();
                 return false;
             }
-            drawChart.vHisLine.setStyleSheet("QLabel{border:2px dotted white;}");
-            drawChart.vHisLine.resize(1,drawChart.hisTimeShareChartView->height()-BOTTOMHEIGHTEDGE);
-            drawChart.hHisLine.setStyleSheet("QLabel{border:2px dotted white;}");
-            drawChart.hHisLine.resize(drawChart.hisTimeShareChartView->width()-2*WIDTHEDGE,1);
-            float price=GlobalVar::mHisTimeShareChartList.at(n).price;
+            pDrawChart->vlblHisLine.setStyleSheet("QLabel{border:2px dotted white;}");
+            pDrawChart->vlblHisLine.resize(1,pDrawChart->HisTimeChartBottom());
+            pDrawChart->hlblHisLine.setStyleSheet("QLabel{border:2px dotted white;}");
+            pDrawChart->hlblHisLine.resize(pDrawChart->HisTimeChartWidth(),1);
+            float price=m_pHisTimeShareChartList->at(n).price;
 
-            if (price>GlobalVar::hisPreClose)
-                drawChart.hisTimeSharePrice->setStyleSheet("color:red;font:bold;font-size:18px");
-            else if (price<GlobalVar::hisPreClose)
-                drawChart.hisTimeSharePrice->setStyleSheet("color:rgb(0,255,0);font:bold;font-size:18px");
+            if (price>m_pGlobalVar->hisPreClose)
+                pDrawChart->lblhisTimeSharePrice->setStyleSheet("color:red;font:bold;font-size:18px");
+            else if (price<m_pGlobalVar->hisPreClose)
+                pDrawChart->lblhisTimeSharePrice->setStyleSheet("color:rgb(0,255,0);font:bold;font-size:18px");
             else
-                drawChart.hisTimeSharePrice->setStyleSheet("color:yellow;font:bold;font-size:18px");
-            float p=(price-GlobalVar::hisPreClose)*100/GlobalVar::hisPreClose;
-            int x=(drawChart.hisTimeShareChartView->width()-2*WIDTHEDGE)*n/GlobalVar::mHisTimeShareChartList.size()+WIDTHEDGE;
-            int y=(drawChart.hisTimeShareHighLowPoint[0]-price)*(drawChart.hisTimeShareChartView->height()*12/15-2*TOPHEIGHTEDGE)/(drawChart.hisTimeShareHighLowPoint[0]-drawChart.hisTimeShareHighLowPoint[1])+TOPHEIGHTEDGE;
+                pDrawChart->lblhisTimeSharePrice->setStyleSheet("color:yellow;font:bold;font-size:18px");
+            float p=(price-m_pGlobalVar->hisPreClose)*100/m_pGlobalVar->hisPreClose;
+            int x=pDrawChart->HisTimeChartWidth()*n/m_pHisTimeShareChartList->size()+WIDTHEDGE;
+            int y=pDrawChart->YTransferHisTimeChart(price);//pDrawChart->hisTimeShareHighLowPoint[0]-price)*(pDrawChart->hisTimeShareChartView->height()*12/15-2*TOPHEIGHTEDGE)/(pDrawChart->hisTimeShareHighLowPoint[0]-pDrawChart->hisTimeShareHighLowPoint[1])+TOPHEIGHTEDGE;
 //            qDebug()<<x<<y;
-            drawChart.hisTimeSharePrice->setText(QString::number(price,'f',2)+"("+QString::number(p,'f',2)+"%)");
-            drawChart.hisTimeShareVol->setText(GlobalVar::format_conversion(GlobalVar::mHisTimeShareChartList.at(n).vol));
-            drawChart.hisTimeShareTime->setText(GlobalVar::mHisTimeShareChartList.at(n).time.right(5));
-            drawChart.hisTimeSharePrice->adjustSize();
-            drawChart.hisTimeShareVol->adjustSize();
-            drawChart.hisTimeSharePrice->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.hisTimeSharePrice->width()/(drawChart.hisTimeShareChartView->width()-2*WIDTHEDGE),100);
-            drawChart.hisTimeShareVol->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.hisTimeShareVol->width()/(drawChart.hisTimeShareChartView->width()-2*WIDTHEDGE),340);
-            drawChart.hisTimeShareTime->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-WIDTHEDGE)*drawChart.hisTimeShareTime->width()/(drawChart.hisTimeShareChart->width()-2*WIDTHEDGE),310);
-            drawChart.vHisLine.move(x,0);
-            drawChart.hHisLine.move(0,y);
-            drawChart.hisTimeSharePrice->show();
-            drawChart.hisTimeShareVol->show();
-            drawChart.hisTimeShareTime->show();
-            drawChart.vHisLine.show();
-            drawChart.hHisLine.show();
-            drawChart.hisTimeShareChartView->update();
+            pDrawChart->lblhisTimeSharePrice->setText(QString::number(price,'f',2)+"("+QString::number(p,'f',2)+"%)");
+            pDrawChart->lblhisTimeShareVol->setText(format_conversion(m_pHisTimeShareChartList->at(n).vol));
+            pDrawChart->lblhisTimeShareTime->setText(m_pHisTimeShareChartList->at(n).time.right(5));
+            pDrawChart->lblhisTimeSharePrice->adjustSize();
+            pDrawChart->lblhisTimeShareVol->adjustSize();
+            pDrawChart->lblhisTimeSharePrice->move(mPos.rx()-(mPos.x()-WIDTHEDGE)*pDrawChart->lblhisTimeSharePrice->width()/(pDrawChart->HisTimeChartWidth()),100);
+            pDrawChart->lblhisTimeShareVol->move(mPos.rx()-(mPos.x()-WIDTHEDGE)*pDrawChart->lblhisTimeShareVol->width()/(pDrawChart->HisTimeChartWidth()),340);
+            pDrawChart->lblhisTimeShareTime->move(mPos.rx()-(mPos.x()-WIDTHEDGE)*pDrawChart->lblhisTimeShareTime->width()/(pDrawChart->HisTimeChartWidth()),310);
+            pDrawChart->vlblHisLine.move(x,0);
+            pDrawChart->hlblHisLine.move(0,y);
+            pDrawChart->lblhisTimeSharePrice->show();
+            pDrawChart->lblhisTimeShareVol->show();
+            pDrawChart->lblhisTimeShareTime->show();
+            pDrawChart->vlblHisLine.show();
+            pDrawChart->hlblHisLine.show();
+            pDrawChart->hisTimeShareChartView->update();
         }
         else if (event->type() == QEvent::Wheel)
         {
@@ -1315,9 +1823,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             if (ev->angleDelta().y()<0)
             {
                 hisTimeShareN+=1;
-                if (hisTimeShareN>GlobalVar::mCandleChartList.count()-1)
+                if (hisTimeShareN>(int)m_pKline->size()-1)
                 {
-                    hisTimeShareN=GlobalVar::mCandleChartList.count()-1;
+                    hisTimeShareN=(int)m_pKline->size()-1;
                     return true;
                 }
             }
@@ -1330,70 +1838,79 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                     return true;
                 }
             }
-            QString date=GlobalVar::mCandleChartList.at(hisTimeShareN).time;
-            mFundFlow.getTimeShareMin(GlobalVar::getStockSymbol(),date);
-            drawChart.title->setText(GlobalVar::curName.left(GlobalVar::curName.indexOf("("))+" "+date+"分时图");
-            drawChart.hisTimeShareChartView->update();
+           // QString date=m_pKline->at(hisTimeShareN).date;
+            QString date=getKlineDate(m_pKline->at(hisTimeShareN).date);
+            pDrawChart->lblrowTime->setText(date);
+            pFundFlow->getTimeShareMin(m_pHisTimeShareChartList,m_pGlobalVar->getStockSymbol(),date);
+            pDrawChart->title->setText(m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("("))+" "+date+"分时图");
+            pDrawChart->hisTimeShareChartView->update();
         }
         else if (event->type()==QEvent::Leave)
         {
-            drawChart.hisTimeSharePrice->hide();
-            drawChart.hisTimeShareVol->hide();
-            drawChart.hisTimeShareTime->hide();
-            drawChart.vHisLine.hide();
-            drawChart.hHisLine.hide();
+            pDrawChart->lblhisTimeSharePrice->hide();
+            pDrawChart->lblhisTimeShareVol->hide();
+            pDrawChart->lblhisTimeShareTime->hide();
+            pDrawChart->vlblHisLine.hide();
+            pDrawChart->hlblHisLine.hide();
         }
         return true;
     }
-    else if (obj==drawChart.candleChart)
+    else if (obj==pDrawChart->candleChart && (not bWantReqKline )) //and freq=="1" ) || (freq>"1") ))
     {
         if (event->type()==QEvent::MouseMove)
         {
             isFlashBaseInfo=false;
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            flashOldCandleInfo(mouseEvent);
+            flashOldCandleInfo(mouseEvent);    
+            return true;
         }
         else if (event->type()==QEvent::MouseButtonDblClick)
         {
-            if (GlobalVar::WhichInterface==2 or GlobalVar::WhichInterface==5 or
-                GlobalVar::curCode.left(2)=="10" or GlobalVar::WhichInterface==6 or
-                GlobalVar::curCode.left(2)=="13" or GlobalVar::curCode.left(2)=="12")
+            if (m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==USMARKET or
+                m_pGlobalVar->curCode.left(2)=="10" or m_pGlobalVar->WhichInterface==UKMARKET or
+                m_pGlobalVar->curCode.left(2)=="13" or m_pGlobalVar->curCode.left(2)=="12")
             {
-                QMessageBox::information(this,"提示", "只能查看A股", QMessageBox::Ok);
-                return false;
+               // QMessageBox::information(this,"提示", "只能查看A股", QMessageBox::Ok);
+                return false; //只能查看A股分时图
             }
             QMouseEvent *mouseEvent = (QMouseEvent *)event;
-            if (mouseEvent->pos().y()<30)
+            if (mouseEvent->pos().y()<KWIDTHEDGE)
                 return false;
-            int m=(mouseEvent->pos().x()-KWIDTHEDGE)*GlobalVar::KRange/(drawChart.candleChart->width()-2*KWIDTHEDGE-KRIGHTWIDTHEDGE);
-            if (GlobalVar::mCandleChartList.count()<GlobalVar::KRange)
+            int nKdCount= (int)m_pKline->size();
+
+            int m = pDrawChart->XTransferCandleChart(mouseEvent->pos().x()-KWIDTHEDGE);
+            if (nKdCount<m_pGlobalVar->KRange)
                 hisTimeShareN=m;
             else
-                hisTimeShareN=GlobalVar::mCandleChartList.count()-GlobalVar::offsetLocal+m;
-            if (hisTimeShareN>GlobalVar::mCandleChartList.count()-1 or hisTimeShareN<0)
+                hisTimeShareN=nKdCount-m_pGlobalVar->offsetLocal+m;
+            if (hisTimeShareN>nKdCount-1 or hisTimeShareN<0)
                 return true;
-            QString date=GlobalVar::mCandleChartList.at(hisTimeShareN).time;
+            //QString date=m_pKline->at(hisTimeShareN).time;
+            QString date=getKlineDate(m_pKline->at(hisTimeShareN).date);
+            pDrawChart->lblrowTime->setText(date);
             if (freq=="1" or freq=="7" or freq=="5" or freq=="15" or freq=="30" or freq=="60")
             {
                 QStringList list=date.split(" ");
                 date=list[0];
             }
 
-            mFundFlow.getTimeShareMin(GlobalVar::getStockSymbol(),date);
-            drawChart.hisTimeShareChart->show();
-            drawChart.title->setText(GlobalVar::curName.left(GlobalVar::curName.indexOf("("))+" "+date+"分时图");
-            drawChart.hisTimeShareChartView->update();
+            pFundFlow->getTimeShareMin(m_pHisTimeShareChartList,m_pGlobalVar->getStockSymbol(),date);
+            pDrawChart->hisTimeShareChart->show();
+            pDrawChart->title->setText(m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("("))+" "+date+"分时图");
+            pDrawChart->hisTimeShareChartView->update();
+             return true;
         }
         else if (event->type()==QEvent::Paint)
         {
-            QPainter *painter=new QPainter(drawChart.candleChart);
-            drawChart.drawCandleChart(painter);
-            delete painter;
+            QPainter painter(pDrawChart->candleChart);
+            pDrawChart->drawCandleChart(freq,nTech,bNewCalc,m_pKline,m_pCLCore,&painter);
+            bNewCalc= false;
+            return true; // fixed 2024.10.7
         }
         else if (event->type() == QEvent::Wheel)
         {
             QWheelEvent *ev = static_cast<QWheelEvent *>(event);
-            if (drawChart.hisTimeShareChart->isHidden()){
+            if (pDrawChart->hisTimeShareChart->isHidden()){
                 downUpLookStock(ev);
                  return true;
             }
@@ -1402,9 +1919,11 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                 if (ev->angleDelta().y()<0)
                 {
                     hisTimeShareN+=1;
-                    if (hisTimeShareN>GlobalVar::mCandleChartList.count()-1)
+                    int nKdCount= (int)m_pKline->size();
+                    if (hisTimeShareN>nKdCount-1)
                     {
-                        hisTimeShareN=GlobalVar::mCandleChartList.count()-1;
+                        hisTimeShareN=nKdCount-1;
+                       // pDrawChart->hisTimeShareChartView->update();
                         return true;
                     }
                 }
@@ -1414,27 +1933,35 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                     if (hisTimeShareN<0)
                     {
                         hisTimeShareN=0;
-                        return true;
+                        //return true;
                     }
                 }
-                QString date=GlobalVar::mCandleChartList.at(hisTimeShareN).time;
-                mFundFlow.getTimeShareMin(GlobalVar::getStockSymbol(),date);
-                drawChart.title->setText(GlobalVar::curName.left(GlobalVar::curName.indexOf("("))+" "+date+"分时图");
-                drawChart.hisTimeShareChartView->update();
+                //QString date=m_pKline->at(hisTimeShareN).time;
+                QString qStrDate=getKlineDate(m_pKline->at(hisTimeShareN).date);
+                pDrawChart->lblrowTime->setText(qStrDate);
+
+                pFundFlow->getTimeShareMin(m_pHisTimeShareChartList,m_pGlobalVar->getStockSymbol(),qStrDate);
+                if (m_pGlobalVar->curName.indexOf("(")==-1)
+                    pDrawChart->title->setText(m_pGlobalVar->curName+" "+qStrDate+"分时图");
+                else
+                    pDrawChart->title->setText(m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("("))+" "+qStrDate+"分时图");
+                pDrawChart->hisTimeShareChartView->update();
+                 return true;
             }
         }
         else if (event->type()==QEvent::Leave)
         {
-            drawChart.colPrice->hide();
-            drawChart.rowTime->hide();
-            drawChart.vKLine->hide();
-            drawChart.hKLine->hide();
+            pDrawChart->lblcolPrice->hide();
+            pDrawChart->lblrowTime->hide();
+            pDrawChart->vlblKLine->hide();
+            pDrawChart->hlblKLine->hide();
             isFlashBaseInfo=true;
             reFlashBuySellBaseInfo();
+             return true;
         }
         else if (event->type()==QEvent::ContextMenu)
         {
-            QMenu *menu=new QMenu(drawChart.candleChart);
+            QMenu *menu=new QMenu(pDrawChart->candleChart);
             menu->setAttribute(Qt::WA_DeleteOnClose);
             QAction *moveOne=new QAction("左右移动一格",menu);
             QAction *moveFast=new QAction("左右快速移动",menu);
@@ -1444,15 +1971,26 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             moveFast->setIcon(icon1);
             menu->addAction(moveFast);
             menu->addAction(moveOne);
+
+
+            // 添加分隔线
+            menu->addSeparator();
+            QIcon icon11(":/new/png/png/kline.png");
+
+            menu->addAction(icon11,"MACD",this,SLOT(SelectTechAction()));
+            menu->addAction(icon11,"KDJ",this,SLOT(SelectTechAction()));        
+            menu->addAction(icon11,"成交量",this,SLOT(SelectTechAction()));
+            
             menu->popup(QCursor::pos());
             connect(moveOne,&QAction::triggered,this,[=](){
-                drawChart.moveUnit=1;
+                pDrawChart->moveUnit=1;
             });
             connect(moveFast,&QAction::triggered,this,[=](){
-                drawChart.moveUnit=GlobalVar::KRange*0.2;
+                pDrawChart->moveUnit=m_pGlobalVar->KRange*0.2;
             });
+             return true;
         }
-        return true;
+
     }
     else if (obj==newsData->verticalScrollBar() and event->type() == QEvent::Wheel)
     {
@@ -1465,58 +2003,60 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             newsData->verticalScrollBar()->setSliderPosition(tempStep+136);
         else if (para>0/* and tempStep>6*/)
             newsData->verticalScrollBar()->setSliderPosition(tempStep-136);
-        return true;
+      //  return true;
     }
-    else if (obj==mTableStock.timeShareTickView->verticalScrollBar() and event->type() == QEvent::Wheel)
+    else if (obj==pTableStock->timeShareTickView->verticalScrollBar() and event->type() == QEvent::Wheel)
     {
         QWheelEvent *ev = static_cast<QWheelEvent *>(event);
         int para=ev->angleDelta().y();
-        int tempStep=mTableStock.timeShareTickView->verticalScrollBar()->value();
+        int tempStep=pTableStock->timeShareTickView->verticalScrollBar()->value();
         if (para<0)
-            mTableStock.timeShareTickView->verticalScrollBar()->setSliderPosition(tempStep+13);
+            pTableStock->timeShareTickView->verticalScrollBar()->setSliderPosition(tempStep+13);
         else
-            mTableStock.timeShareTickView->verticalScrollBar()->setSliderPosition(tempStep-13);
-        return true;
+            pTableStock->timeShareTickView->verticalScrollBar()->setSliderPosition(tempStep-13);
+        //return true;
     }
-    else if (obj==searchStock.searchCodeLine and event->type() ==QKeyEvent::KeyPress)
+    else if (obj==pSearchStock->searchCodeLine and event->type() ==QKeyEvent::KeyPress)
     {
         QKeyEvent *event1 = static_cast<QKeyEvent *>(event);
         if (event1->key()==Qt::Key_Down)
         {
-            GlobalVar::curBlock+=1;
-            if (GlobalVar::curBlock>searchStock.matchCodeText->document()->blockCount()-1)
-                GlobalVar::curBlock=0;
+            m_pGlobalVar->curBlock+=1;
+            if (m_pGlobalVar->curBlock>pSearchStock->matchCodeText->document()->blockCount()-1)
+                m_pGlobalVar->curBlock=0;
         }
         else if (event1->key()==Qt::Key_Up)
         {
-            GlobalVar::curBlock-=1;
-            if (GlobalVar::curBlock<0)
-                GlobalVar::curBlock=searchStock.matchCodeText->document()->blockCount()-1;
+            m_pGlobalVar->curBlock-=1;
+            if (m_pGlobalVar->curBlock<0)
+                m_pGlobalVar->curBlock=pSearchStock->matchCodeText->document()->blockCount()-1;
         }
         QTextBlockFormat fmt=QTextBlockFormat();
         QTextCharFormat charFmt=QTextCharFormat();
         fmt.setBackground(QColor("white"));
-        searchStock.matchCodeText->textCursor().setBlockFormat(fmt);
-        searchStock.matchCodeText->textCursor().deletePreviousChar();
-        searchStock.matchCodeText->textCursor().deletePreviousChar();
-        searchStock.matchCodeText->textCursor().deletePreviousChar();
-        searchStock.matchCodeText->textCursor().deletePreviousChar();
-//        qDebug()<<GlobalVar::curBlock;
-        QTextBlock block=searchStock.matchCodeText->document()->findBlockByNumber(GlobalVar::curBlock);
-        searchStock.matchCodeText->setTextCursor(QTextCursor(block));
-        fmt=searchStock.matchCodeText->textCursor().blockFormat();
+        pSearchStock->matchCodeText->textCursor().setBlockFormat(fmt);
+        pSearchStock->matchCodeText->textCursor().deletePreviousChar();
+        pSearchStock->matchCodeText->textCursor().deletePreviousChar();
+        pSearchStock->matchCodeText->textCursor().deletePreviousChar();
+        pSearchStock->matchCodeText->textCursor().deletePreviousChar();
+//        qDebug()<<m_pGlobalVar->curBlock;
+        QTextBlock block=pSearchStock->matchCodeText->document()->findBlockByNumber(m_pGlobalVar->curBlock);
+        pSearchStock->matchCodeText->setTextCursor(QTextCursor(block));
+        fmt=pSearchStock->matchCodeText->textCursor().blockFormat();
 
         fmt.setBackground(QColor(0, 199, 255));
-        searchStock.matchCodeText->textCursor().setBlockFormat(fmt);
+        pSearchStock->matchCodeText->textCursor().setBlockFormat(fmt);
         charFmt.setForeground(QColor("red"));
-        searchStock.matchCodeText->mergeCurrentCharFormat(charFmt);
-        searchStock.matchCodeText->textCursor().insertText(">>> ");
+        pSearchStock->matchCodeText->mergeCurrentCharFormat(charFmt);
+        pSearchStock->matchCodeText->textCursor().insertText(">>> ");
     }
     else
     {
-        for (int i=0;i<10;++i)
+        if (event->type()==QEvent::MouseButtonPress or event->type()==QEvent::Leave or event->type()==QEvent::Leave)
         {
-            if (obj==buySellPrice[i] and (GlobalVar::WhichInterface==1 or GlobalVar::WhichInterface==4) and GlobalVar::curCode.left(1)!="1")
+          for (int i=0;i<10;++i)
+          {
+            if (obj==buySellPrice[i] and (m_pGlobalVar->WhichInterface==CNMARKET or m_pGlobalVar->WhichInterface==FUNDFLOW) and m_pGlobalVar->curCode.left(1)!="1")
             {
                 if (event->type()==QEvent::MouseButtonPress)
                     tradePrice=buySellPrice[i]->text().toFloat();
@@ -1526,373 +2066,536 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                 {
                     buySellPrice[i]->setStyleSheet("border-width: 0px;font:16px;font-family:微软雅黑");
                     float price=buySellPrice[i]->text().toFloat();
-                    if (price>GlobalVar::preClose)
-                        buySellPrice[i]->setPalette(GlobalVar::pRed);
-                    else if (price<GlobalVar::preClose)
-                        buySellPrice[i]->setPalette(GlobalVar::pGreen);
+                    if (price>m_pGlobalVar->preClose)
+                        buySellPrice[i]->setPalette(m_pGlobalVar->pRed);
+                    else if (price<m_pGlobalVar->preClose)
+                        buySellPrice[i]->setPalette(m_pGlobalVar->pGreen);
                     else
-                        buySellPrice[i]->setPalette(GlobalVar::pBlack);
+                        buySellPrice[i]->setPalette(m_pGlobalVar->pBlack);
                 }
             }
+          }
         }
-        for (int i=0;i<50;++i)
-            if (obj==drawChart.annLabel[i] and event->type()==QEvent::MouseButtonDblClick)
+        if (event->type()==QEvent::MouseButtonDblClick)
+        {
+            for (int i=0;i<50;++i)
             {
-                QString date=drawChart.annLabel[i]->toolTip().left(11);
+            // if (obj==pDrawChart->annLabel[i] and event->type()==QEvent::MouseButtonDblClick)
+              if (obj==pDrawChart->annLabel[i])
+              {
+                QString date=pDrawChart->annLabel[i]->toolTip().left(11);
                 int curItem=0;
                 QStringList l;
                 bool f=true;
-                for(int j = 0; j < GlobalVar::annoucementList.count()-1; j++)
+                int nCount =(int)m_pGlobalVar->annoucementList.count()-1;
+                for(int j = 0; j < nCount; j++)
                 {
-                    if (f and date==GlobalVar::annoucementList.at(j)[2].left(11))
+                    if (f and date==m_pGlobalVar->annoucementList.at(j)[2].left(11))
                     {
                         curItem=j;
                         f=false;
                     }
-                    l<<GlobalVar::annoucementList.at(j)[2]+GlobalVar::annoucementList.at(j)[1]+
-                            "\n"+GlobalVar::annoucementList.at(j)[0];
+                    l<<m_pGlobalVar->annoucementList.at(j)[2]+m_pGlobalVar->annoucementList.at(j)[1]+
+                            "\n"+m_pGlobalVar->annoucementList.at(j)[0];
                 }
-                drawChart.model->setStringList(l);
-                drawChart.annTitle->setModel(drawChart.model);
-                QModelIndex qindex = drawChart.model->index(curItem,0);
-                drawChart.annTitle->setCurrentIndex(qindex);
-                drawChart.annoucementWindow->setWindowTitle(GlobalVar::curCode+" "+
-                            GlobalVar::curName.left(GlobalVar::curName.indexOf("(")));
-                drawChart.annClicked(qindex);
-                drawChart.annoucementWindow->show();
+                pDrawChart->model->setStringList(l);
+                pDrawChart->annTitle->setModel(pDrawChart->model);
+                QModelIndex qindex = pDrawChart->model->index(curItem,0);
+                pDrawChart->annTitle->setCurrentIndex(qindex);
+                pDrawChart->annoucementWindow->setWindowTitle(m_pGlobalVar->curCode+" "+
+                            m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("(")));
+                pDrawChart->annClicked(qindex);
+                pDrawChart->annoucementWindow->show();
                 return true;
+              }
             }
+        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
+
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
     if (event->pos().ry()<250 and event->button()==Qt::RightButton){
-        if (GlobalVar::WhichInterface==1 or (GlobalVar::WhichInterface==4 and GlobalVar::isKState))
+        if (m_pGlobalVar->WhichInterface==CNMARKET or (m_pGlobalVar->WhichInterface==FUNDFLOW and m_pGlobalVar->isKState))
             addRightMenu(3);
     }
     else
         QMainWindow::mousePressEvent(event);
 }
+
+void MainWindow::onTabFocusChanged() {
+    QTableView *tableView = qobject_cast<QTableView*>(sender());
+    if (tableView) {
+         SelectedtableView=tableView;
+    }
+}
+
+void MainWindow::KeyMoveUpOrDown(short incIdx)
+{
+    if (SelectedtableView!=nullptr )
+    {
+        if (SelectedtableView == pTableStock->stockTableView) {
+            int row=pTableStock->stockTableView->currentIndex().row()+incIdx;
+            if (row<0 or row >=m_pTableList->size())  //fixed
+                return;
+
+            m_pGlobalVar->curCode=m_pTableList->at(row).code;
+
+
+        } else if (SelectedtableView== pTableStock->blockView) {
+            int curRow=pTableStock->blockView->currentIndex().row()+incIdx;
+            if (curRow<0 or curRow >=m_pFundFlowList->count())  //fixed
+                return;
+
+            QAbstractItemModel *model =SelectedtableView->model();
+            if (!model)
+                return;
+            int column_count = model->columnCount();
+            m_pGlobalVar->curBoard =model->data(model->index(curRow, column_count-1)).toString();
+
+
+            return ;
+
+        }
+        else if (SelectedtableView== pTableStock->risingSpeedView) {
+            int curRow=pTableStock->risingSpeedView->currentIndex().row()+incIdx;
+            if (curRow<0 or curRow >=m_pRisingSpeedList->size())  //fixed
+                return;
+            QAbstractItemModel *model =SelectedtableView->model();
+            if (!model)
+                return;
+              m_pGlobalVar->curCode =model->data(model->index(curRow, 0)).toString();
+
+        } else if (SelectedtableView == pTableStock->myStockView) {
+            int curRow=pTableStock->myStockView->currentIndex().row()+incIdx;
+            if (curRow>m_pMyStockList->count()-1)
+                curRow=0;
+            QAbstractItemModel *model =SelectedtableView->model();
+            if (!model)
+                return;
+
+            m_pGlobalVar->curCode =model->data(model->index(curRow, 0)).toString();
+        }
+        emit startThreadTimeShareChart(false);
+        emit startThreadTimeShareTick(false);
+    }
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
+
     QKeySequence key=event->key();
+
     if (key==Qt::Key_Escape)
     {
-        if (GlobalVar::isKState)
+        if(event->isAutoRepeat()){
+            return;
+         }
+
+        if (m_pGlobalVar->isKState)
         {
-            if (not drawChart.annoucementWindow->isHidden())
-                drawChart.annoucementWindow->close();
-            else if (not drawChart.hisTimeShareChart->isHidden())
-                drawChart.hisTimeShareChart->close();
+            m_PreCode="";
+            qStrPreFreq="";
+            qStrPreAdjustFlag="";
+            m_pKline->Clear();
+
+            if (not pDrawChart->annoucementWindow->isHidden())
+                pDrawChart->annoucementWindow->close();
+            else if (not pDrawChart->hisTimeShareChart->isHidden())
+                pDrawChart->hisTimeShareChart->close();
             else
             {
-                GlobalVar::isKState=false;
+                m_pGlobalVar->isKState=false;
                 isTraversalMyStock=false;
-                if (GlobalVar::WhichInterface==1)
+                if (m_pGlobalVar->WhichInterface==CNMARKET)
                     middleWindow->show();
-                else if(GlobalVar::WhichInterface==4)
+                else if(m_pGlobalVar->WhichInterface==FUNDFLOW)
                 {
                     rightFundWindow->show();
                     rightBaseWindow->hide();
                 }
-                drawChart.candleChart->hide();
-                mTableStock.stockTableView->show();
-                resetKParameter();
+
+                pDrawChart->candleChart->hide();
+                pTableStock->stockTableView->show();
+                //resetKParameter();
+            }
+
+            if (SelectedtableView!=nullptr)
+            {
+                SelectedtableView->setFocus();
             }
         }
-        else if (GlobalVar::WhichInterface==1 or GlobalVar::WhichInterface==4)
-            mFundFlow.fundFlowChart->close();
+        else if (m_pGlobalVar->WhichInterface==CNMARKET or m_pGlobalVar->WhichInterface==FUNDFLOW)
+        {
+            pFundFlow->fundFlowChart->close();
+            if(m_pGlobalVar->isBoard)
+            {
+                m_pGlobalVar->WhichInterface=CNMARKET; //  市场标志
+                isAsia=true;
+                ifCanClick=CNCLICK;
+                middleWindow->show();
+                ui->USzMarket->setChecked(false);
+                m_pGlobalVar->curCode=m_pGlobalVar->settings->value("curCode").toString();
+                m_pGlobalVar->curName=m_pGlobalVar->settings->value("curName").toString();
+
+                m_pGlobalVar->isBoard=false;
+                pTableStock->stockTableView->clearSpans();
+                resetKParameter();
+                toInterFace("main");
+                emit startThreadTable(true);
+                emit startThreadTimeShareChart(false);
+                emit startThreadTimeShareTick(false);
+                emit startThreadIndex(false);
+            }
+        }
+    }
+    else if ( key==Qt::Key_Tab)
+    {
+        QTableView *tableView = qobject_cast<QTableView*>(sender());
+       if (tableView)
+       {
+         SelectedtableView=tableView;
+         SelectedtableView->setFocus();
+       }
     }
     else if (key==Qt::Key_PageDown)
     {
-        if (isThreadRunning)
+        if (isThreadRunning  )
             return;
         isThreadRunning=true;
-        drawChart.hisTimeShareChart->close();
-        drawChart.annoucementWindow->close();
-        if (GlobalVar::isKState)
+        pDrawChart->hisTimeShareChart->close();
+        pDrawChart->annoucementWindow->close();
+        if (m_pGlobalVar->isKState)
         {     
             resetKParameter();
-            if (ifCanClick==2)
+            if (ifCanClick==FUNDFLOWCLICK)
             {
-                int curRow=mTableStock.stockTableView->currentIndex().row()+1;
-                if (curRow>mFundFlow.model->rowCount()-1)
+                int curRow=pTableStock->stockTableView->currentIndex().row()+1;
+                if (curRow> pFundFlow->model->rowCount()-1)
                     curRow=0;
-                GlobalVar::curCode=mFundFlow.model->item(curRow,0)->text();
-                mTableStock.stockTableView->setCurrentIndex(mFundFlow.model->index(curRow,0));
+                m_pGlobalVar->curCode= pFundFlow->model->item(curRow,0)->text();
+                pTableStock->stockTableView->setCurrentIndex( pFundFlow->model->index(curRow,0));
             }
             else
             {
                 if (isTraversalMyStock)
                 {
-                    int curRow=mTableStock.myStockView->currentIndex().row()+1;
-                    if (curRow>GlobalVar::mMyStockList.count()-1)
+                    int curRow=pTableStock->myStockView->currentIndex().row()+1;
+                    if (curRow>m_pMyStockList->count()-1)
                         curRow=0;
-                    GlobalVar::curCode=GlobalVar::mMyStockList.at(curRow).code;
-                    mTableStock.myStockView->setCurrentIndex(mTableStock.m_myStockModel->index(curRow,0));
+                    m_pGlobalVar->curCode=m_pMyStockList->at(curRow).code;
+                    pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(curRow,0));
                 }
                 else
                 {
-                    int curRow=mTableStock.stockTableView->currentIndex().row()+1;
-                    if (curRow>GlobalVar::mTableList.count()-1)
+                    int curRow=pTableStock->stockTableView->currentIndex().row()+1;
+                    if (curRow>m_pTableList->count()-1)
                         curRow=0;
-                    GlobalVar::curCode=GlobalVar::mTableList.at(curRow).code;
-                    mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(curRow,0));
+                    m_pGlobalVar->curCode=m_pTableList->at(curRow).code;
+                    pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(curRow,0));
                 }
             }
+
+            lastTime=QDateTime::currentDateTime();
+            bWantReqKline=true;
             emit startThreadCandleChart(freq,adjustFlag,true);
             emit startThreadTimeShareChart(false);
             emit startThreadTimeShareTick(false);
-            mFundFlow.initAllNews();
-            drawChart.candleChart->update();
+            pFundFlow->initAllNews();
+           // pDrawChart->candleChart->update();
         }
+
         isThreadRunning=false;
     }
     else if (key==Qt::Key_PageUp)
     {
-        if (isThreadRunning)
+        if (isThreadRunning  )
             return;
         isThreadRunning=true;
-        drawChart.hisTimeShareChart->close();
-        drawChart.annoucementWindow->close();
-        if (GlobalVar::isKState)
+        pDrawChart->hisTimeShareChart->close();
+        pDrawChart->annoucementWindow->close();
+        if (m_pGlobalVar->isKState)
         {
             resetKParameter();
-            if (ifCanClick==2)
+            if (ifCanClick==FUNDFLOWCLICK)
             {
-                int curRow=mTableStock.stockTableView->currentIndex().row()-1;
+                int curRow=pTableStock->stockTableView->currentIndex().row()-1;
                 if (curRow<0)
-                    curRow=mFundFlow.model->rowCount()-1;
-                GlobalVar::curCode=mFundFlow.model->item(curRow,0)->text();
-                mTableStock.stockTableView->setCurrentIndex(mFundFlow.model->index(curRow,0));
+                    curRow= pFundFlow->model->rowCount()-1;
+                m_pGlobalVar->curCode= pFundFlow->model->item(curRow,0)->text();
+                pTableStock->stockTableView->setCurrentIndex( pFundFlow->model->index(curRow,0));
             }
             else
             {
                 if (isTraversalMyStock)
                 {
-                    int curRow=mTableStock.myStockView->currentIndex().row()-1;
+                    int curRow=pTableStock->myStockView->currentIndex().row()-1;
                     if (curRow<0)
-                        curRow=GlobalVar::mMyStockList.count()-1;
-                    GlobalVar::curCode=GlobalVar::mMyStockList.at(curRow).code;
-                    mTableStock.myStockView->setCurrentIndex(mTableStock.m_myStockModel->index(curRow,0));
+                        curRow=m_pMyStockList->count()-1;
+                    m_pGlobalVar->curCode=m_pMyStockList->at(curRow).code;
+                    pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(curRow,0));
                 }
                 else
                 {
-                    int curRow=mTableStock.stockTableView->currentIndex().row()-1;
+                    int curRow=pTableStock->stockTableView->currentIndex().row()-1;
                     if (curRow<0)
-                        curRow=GlobalVar::mTableList.count()-1;
-                    GlobalVar::curCode=GlobalVar::mTableList.at(curRow).code;
-                    mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(curRow,0));
+                        curRow=m_pTableList->count()-1;
+                    m_pGlobalVar->curCode=m_pTableList->at(curRow).code;
+                    pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(curRow,0));
                 }
             }
+
+            lastTime=QDateTime::currentDateTime();
+            bWantReqKline=true;
             emit startThreadCandleChart(freq,adjustFlag,true);
             emit startThreadTimeShareChart(false);
             emit startThreadTimeShareTick(false);
-            mFundFlow.initAllNews();
-            drawChart.candleChart->update();
+            pFundFlow->initAllNews();
+            //pDrawChart->candleChart->update();
         }
+
         isThreadRunning=false;
     }
     else if (key==Qt::Key_Enter or key==Qt::Key_Return)
     {
-        if (GlobalVar::isKState or GlobalVar::WhichInterface==4)
+
+        if (m_pGlobalVar->isKState or m_pGlobalVar->WhichInterface==FUNDFLOW  )
             return;
-        GlobalVar::isKState=true;
+        if ( SelectedtableView!=nullptr and SelectedtableView==pTableStock->blockView )
+        {
+          pTableStock->isFlashTable=false;
+          m_pGlobalVar->isBoard=true;
+          //m_pGlobalVar->curBoard=m_pGlobalVar->mFundFlowList.at(curRow)[13];
+          pSearchStock->getBoardData(m_pTableList);
+          if (not m_pTableList->isEmpty())
+              pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+           pTableStock->isFlashTable=true;
+          return;
+        }
+        m_pGlobalVar->isKState=true;
+
+        lastTime=QDateTime::currentDateTime();
+        bWantReqKline=true;
         emit startThreadCandleChart(freq,adjustFlag,true);
-        toInterFace("k");
+        toInterFace("k"); // fixed 2024.10.7
     }
     else if ((key >= 48 and key <= 57) or (key >= 65 and key <= 90))
     {
 //        qDebug()<<event->text();
 //        searchCode+=event->text();
-        if (GlobalVar::WhichInterface==2 or GlobalVar::WhichInterface==5 or GlobalVar::WhichInterface==6)
-            return;
+        //键盘精灵，只有A股可以输入选择
+        //if (m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET)
+        //    return;
+
         searchSmallWindow->show();
-        searchStock.searchCodeLine->setText(event->text());
-        searchStock.searchCodeLine->setFocus();
-        searchStock.matchCodeText->moveCursor(QTextCursor::Start);
+        pSearchStock->searchCodeLine->setText(event->text());
+        pSearchStock->searchCodeLine->setFocus();
+        pSearchStock->matchCodeText->moveCursor(QTextCursor::Start);
     }
     else if (key==Qt::Key_Up)
     {
-        if (GlobalVar::isKState)
+        if (m_pGlobalVar->isKState)
         {
-            int temp=GlobalVar::KRange;
-            GlobalVar::KRange=GlobalVar::KRange*0.8;
+            int value=m_pGlobalVar->KRange;
+            m_pGlobalVar->KRange= value *0.8f;
 
-            if (GlobalVar::KRange<50)
+            if (m_pGlobalVar->KRange<50)
             {
-                GlobalVar::KRange=50;
+                m_pGlobalVar->KRange=50;
               //  return; // fixed 2024.10.8
             }
-            GlobalVar::offsetLocal=GlobalVar::offsetLocal-temp+GlobalVar::KRange;
-//            if (GlobalVar::offsetLocal<GlobalVar::KRange)
-//                GlobalVar::offsetLocal=GlobalVar::KRange;
+            m_pGlobalVar->offsetLocal = m_pGlobalVar->offsetLocal - value + m_pGlobalVar->KRange;
+            if ( m_pGlobalVar->offsetLocal<0)
+                m_pGlobalVar->offsetLocal=0;
+//            if (m_pGlobalVar->offsetLocal<m_pGlobalVar->KRange)
+//                m_pGlobalVar->offsetLocal=m_pGlobalVar->KRange;
 
-            drawChart.candleChart->update();
+            pDrawChart->candleChart->update();
         }
+
     }
     else if (key==Qt::Key_Down)
     {
-        if (GlobalVar::isKState)
+
+        if (m_pGlobalVar->isKState)
         {
-            GlobalVar::offsetLocal=GlobalVar::offsetLocal+GlobalVar::KRange*0.1;
-            GlobalVar::KRange=GlobalVar::KRange*1.2;
-            if (GlobalVar::mCandleChartList.count()<GlobalVar::offsetLocal)
-                GlobalVar::offsetLocal=GlobalVar::mCandleChartList.count();
-            if (GlobalVar::KRange>GlobalVar::offsetLocal)
-                GlobalVar::KRange=GlobalVar::offsetLocal;
-            if (preCode!=GlobalVar::curCode)
-            {
-                preCode=GlobalVar::curCode;
-                emit startThreadCandleChart(freq,adjustFlag,false);
-            }
-            drawChart.candleChart->update();
+
+            m_pGlobalVar->offsetLocal=m_pGlobalVar->offsetLocal+m_pGlobalVar->KRange*0.1f;
+
+            m_pGlobalVar->KRange=m_pGlobalVar->KRange*1.2f;
+            int nKdCount =(int)m_pKline->size();
+            if (nKdCount<m_pGlobalVar->offsetLocal)
+                m_pGlobalVar->offsetLocal=nKdCount;
+
+            if (m_pGlobalVar->KRange>m_pGlobalVar->offsetLocal)
+                m_pGlobalVar->KRange=m_pGlobalVar->offsetLocal;
+
+            //if (preCode!=m_pGlobalVar->curCode)
+            //{
+            //    preCode=m_pGlobalVar->curCode;
+           //     emit startThreadCandleChart(freq,adjustFlag,false);
+           // }
+            pDrawChart->candleChart->update();
         }
+
     }
     else if (key==Qt::Key_Left)
     {
-        if (GlobalVar::isKState)
+        if (m_pGlobalVar->isKState)
         {
-            GlobalVar::offsetLocal=GlobalVar::offsetLocal+drawChart.moveUnit;
-            if (GlobalVar::mCandleChartList.count()<GlobalVar::offsetLocal)
-                GlobalVar::offsetLocal=GlobalVar::mCandleChartList.count();
-            if (preCode!=GlobalVar::curCode)
-            {
-                preCode=GlobalVar::curCode;
-                emit startThreadCandleChart(freq,adjustFlag,false);
-            }
-            drawChart.candleChart->update();
+            m_pGlobalVar->offsetLocal=m_pGlobalVar->offsetLocal+pDrawChart->moveUnit;
+             int nKdCount= (int)m_pKline->size();
+            if (nKdCount<m_pGlobalVar->offsetLocal)
+                m_pGlobalVar->offsetLocal=nKdCount;
+           // if (preCode!=m_pGlobalVar->curCode)
+           // {
+           //     preCode=m_pGlobalVar->curCode;
+           //     emit startThreadCandleChart(freq,adjustFlag,false);
+           // }
+            pDrawChart->candleChart->update();
         }
     }
     else if (key==Qt::Key_Right)
     {
-        if (GlobalVar::isKState)
+       if (m_pGlobalVar->isKState)
         {
-            GlobalVar::offsetLocal=GlobalVar::offsetLocal-drawChart.moveUnit;
-            if (GlobalVar::offsetLocal<GlobalVar::KRange)
-                GlobalVar::offsetLocal=GlobalVar::KRange;
-            GlobalVar::offsetEnd=0;
-            drawChart.candleChart->update();
-//            GlobalVar::offsetEnd=OFFSET;
+            m_pGlobalVar->offsetLocal=m_pGlobalVar->offsetLocal-pDrawChart->moveUnit;
+            if (m_pGlobalVar->offsetLocal<m_pGlobalVar->KRange)
+                m_pGlobalVar->offsetLocal=m_pGlobalVar->KRange;
+            //m_pGlobalVar->offsetEnd=0;
+            pDrawChart->candleChart->update();
+//            m_pGlobalVar->offsetEnd=OFFSET;
         }
     }
-    else if (key==Qt::Key_F3)
+    else if (key==Qt::Key_F3 and !event->isAutoRepeat())
         toInterFace("f3");
-    else if (key==Qt::Key_F10)
+    else if (key==Qt::Key_F10  and !event->isAutoRepeat())
         toInterFace("f10");
-    else if (key==Qt::Key_Delete and mTableStock.myStockView->hasFocus())
+    else if (key==Qt::Key_Delete and pTableStock->myStockView->hasFocus()  and !event->isAutoRepeat())
         delMyStock();
     QMainWindow::keyPressEvent(event);
 }
+
 void MainWindow::wheelEvent(QWheelEvent *event)
 {
-    if (not GlobalVar::isKState)
+  
+    if (not m_pGlobalVar->isKState)
     {
          downUpLookStock(event);
     }
-   
+   else
+     QMainWindow::wheelEvent(event);
 }
+
 void MainWindow::setMarket()
 {
     timeCount=-3;
     QObject* obj = sender();
     if (obj->objectName()=="ZHMarket")
     {
-        GlobalVar::WhichInterface=1;
+        m_pGlobalVar->WhichInterface=CNMARKET; //  市场标志
         isAsia=true;
-        ifCanClick=1;
+        ifCanClick=CNCLICK;
         middleWindow->show();
 //        ui->HKMarket->setChecked(false);
 //        ui->USMarket->setChecked(false);
 //        ui->ZHMarket->setChecked(true);
         ui->USzMarket->setChecked(false);
-        GlobalVar::curCode=GlobalVar::settings->value("curCode").toString();
-        GlobalVar::curName=GlobalVar::settings->value("curName").toString();
+        m_pGlobalVar->curCode=m_pGlobalVar->settings->value("curCode").toString();
+        m_pGlobalVar->curName=m_pGlobalVar->settings->value("curName").toString();
     }
     else if (obj->objectName()=="HKMarket")
     {
         saveCode();
-        ifCanClick=-1;
-        GlobalVar::WhichInterface=2;
-        GlobalVar::curSortNum=6;
+        ifCanClick=OTHERCLICK;
+        m_pGlobalVar->WhichInterface=HKMARKET;
+        m_pGlobalVar->curSortNum[0]=0;
         isAsia=true;
         middleWindow->hide();
 //        ui->HKMarket->setChecked(true);
 //        ui->USMarket->setChecked(false);
 //        ui->ZHMarket->setChecked(false);
         ui->USzMarket->setChecked(false);
-        GlobalVar::curCode="00700";
-        GlobalVar::curName="腾讯控股";
+        m_pGlobalVar->curCode="00700";
+        m_pGlobalVar->curName="腾讯控股";
     }
     else if (obj->objectName()=="USMarket")
     {
         saveCode();
-        ifCanClick=-1;
-        GlobalVar::WhichInterface=5;
-        GlobalVar::curSortNum=6;
+        ifCanClick=OTHERCLICK;
+        m_pGlobalVar->WhichInterface=USMARKET;
+        m_pGlobalVar->curSortNum[0]=6;
         isAsia=false;
-        GlobalVar::isUsZhStock=false;
+        m_pGlobalVar->isUsZhStock=false;
         middleWindow->hide();
 //        ui->HKMarket->setChecked(false);
 //        ui->USMarket->setChecked(true);
 //        ui->ZHMarket->setChecked(false);
         ui->USzMarket->setChecked(false);
-        GlobalVar::curCode="105.NVDA";
-        GlobalVar::curName="英伟达";
+        m_pGlobalVar->curCode="105.NVDA";
+        m_pGlobalVar->curName="英伟达";
     }
     else if (obj->objectName()=="USzMarket")
     {
         saveCode();
-        ifCanClick=-1;
-        GlobalVar::WhichInterface=5;
-        GlobalVar::curSortNum=6;
+        ifCanClick=OTHERCLICK;
+        m_pGlobalVar->WhichInterface=USMARKET;
+        m_pGlobalVar->curSortNum[0]=6;
         isAsia=false;
-        GlobalVar::isUsZhStock=true;
+        m_pGlobalVar->isUsZhStock=true;
         middleWindow->hide();
 //        ui->HKMarket->setChecked(false);
         ui->USMarket->setChecked(true);
 //        ui->ZHMarket->setChecked(false);
         ui->USzMarket->setChecked(true);
-        GlobalVar::curCode="106.BABA";
-        GlobalVar::curName="阿里巴巴";
+        m_pGlobalVar->curCode="106.BABA";
+        m_pGlobalVar->curName="阿里巴巴";
     }
     else if (obj->objectName()=="UKMarket")
     {
         saveCode();
-        ifCanClick=-1;
-        GlobalVar::WhichInterface=6;
-        GlobalVar::curSortNum=6;
+        ifCanClick=OTHERCLICK;
+        m_pGlobalVar->WhichInterface=UKMARKET;
+        m_pGlobalVar->curSortNum[0]=6;
         isAsia=false;
         middleWindow->hide();
         //        ui->HKMarket->setChecked(true);
         //        ui->USMarket->setChecked(false);
         //        ui->ZHMarket->setChecked(false);
         ui->USzMarket->setChecked(false);
-        GlobalVar::curCode="155.SHEL";
-        GlobalVar::curName="壳牌";
+        m_pGlobalVar->curCode="155.SHEL";
+        m_pGlobalVar->curName="壳牌";
     }
-    GlobalVar::isBoard=false;
-    mTableStock.stockTableView->clearSpans();
+    m_pGlobalVar->isBoard=false;
+    pTableStock->stockTableView->clearSpans();
+    if (m_pGlobalVar->isKState)
+    {
+        m_PreCode="";
+        qStrPreFreq="";
+        qStrPreAdjustFlag="";
+        m_pKline->Clear();
+    }
     resetKParameter();
     toInterFace("main");
-    emit startThreadTable();
+    emit startThreadTable(true);
     emit startThreadTimeShareChart(false);
     emit startThreadTimeShareTick(false);
-    emit startThreadIndex();
+    emit startThreadIndex(false);
 }
 void MainWindow::addRightMenu(int num)
 {
     QMenu *menu=new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
+    
     QAction *act=new QAction("加入自选",menu);
     QIcon icon(":/new/png/png/join.jpg");
     act->setIcon(icon);
     menu->addAction(act);
     
-     if (GlobalVar::isKState and num==3)
+     if (m_pGlobalVar->isKState and num==3)
      {
-       
+        // 添加分隔线
         menu->addSeparator();
         QAction *act1=new QAction("15分钟K线",menu);
         QIcon icon1(":/new/png/png/kline.png");
@@ -1908,11 +2611,16 @@ void MainWindow::addRightMenu(int num)
         QAction *act4=new QAction("年K线",menu);
         act4->setIcon(icon1);
         menu->addAction(act4);
-        
-        connect(act1,&QAction::triggered,this,&MainWindow::min15Kline);
-        connect(act2,&QAction::triggered,this,&MainWindow::min60Kline);
-        connect(act3,&QAction::triggered,this,&MainWindow::quarterKline);
-        connect(act4,&QAction::triggered,this,&MainWindow::yearKline);
+
+        act1->setData( QVariant::fromValue(3) ) ;
+        act2->setData( QVariant::fromValue(5) ) ;
+        act3->setData( QVariant::fromValue(9) ) ;
+        act4->setData( QVariant::fromValue(10) ) ;
+
+        connect(act1, &QAction::triggered, this, &MainWindow::ChangeKline);
+        connect(act2, &QAction::triggered, this, &MainWindow::ChangeKline);
+        connect(act3, &QAction::triggered, this, &MainWindow::ChangeKline);
+        connect(act4, &QAction::triggered, this, &MainWindow::ChangeKline);
      }
     
     menu->popup(QCursor::pos());
@@ -1921,77 +2629,94 @@ void MainWindow::addRightMenu(int num)
     if (num==1)
     {
         if (ifCanClick==1)
-            info=GlobalVar::mTableList.at(mTableStock.stockTableView->currentIndex().row());
-        else if (ifCanClick==2)
+            info=m_pTableList->at(pTableStock->stockTableView->currentIndex().row());
+        else if (ifCanClick==FUNDFLOWCLICK)
         {
-            code=mFundFlow.model->item(mTableStock.stockTableView->currentIndex().row(),0)->text();
-            info=GlobalVar::findStock(code);
+            code= pFundFlow->model->item(pTableStock->stockTableView->currentIndex().row(),0)->text();
+            info=findStock(m_pTableListCopy,code);
         }
         else
             return;
     }
     else if(num==2)
-        info=GlobalVar::mRisingSpeedList.at(mTableStock.risingSpeedView->currentIndex().row());
+        info=m_pRisingSpeedList->at(pTableStock->risingSpeedView->currentIndex().row());
     else if(num==3)
     {
-        code=GlobalVar::curCode;
+        code=m_pGlobalVar->curCode;
         if (code.left(1)=="1" or code.left(3)=="399")
             return;
-        info=GlobalVar::findStock(code);
+        info=findStock(m_pTableListCopy,code);
     }
     connect(act,&QAction::triggered,this,[info, this](){
-        for (int i=0;i<GlobalVar::mMyStockList.count();++i)
+        for (int i=0;i<m_pMyStockList->count();++i)
         {
-            if (info.code==GlobalVar::mMyStockList.at(i).code)
+            if (info.code==m_pMyStockList->at(i).code)
                 return;
         }
-        GlobalVar::mMyStockList.append(info);
-        GlobalVar::mMyStockCode.append(info.code);
-        int curIndex=mTableStock.myStockView->currentIndex().row();
-        mTableStock.m_myStockModel->setModelData(GlobalVar::mMyStockList,false,false);
-        mTableStock.myStockView->setCurrentIndex(mTableStock.m_myStockModel->index(curIndex,0));
-        mTableStock.m_risingSpeedModel->setModelData(GlobalVar::mRisingSpeedList,false,true);
+        m_pMyStockList->append(info);
+        m_pMyStockCode->append(info.code);
+        int curIndex=pTableStock->myStockView->currentIndex().row();
+         if (curIndex==-1) curIndex=0; //fixed
+        pTableStock->m_myStockModel->setModelData(*m_pMyStockList,false,false,true);
+        pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(curIndex,0));
+        pTableStock->m_risingSpeedModel->setModelData(*m_pRisingSpeedList,false,true,false);
         if (ifCanClick==1)
-            mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
+            pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
         else
-            mFundFlow.model->item(mTableStock.stockTableView->currentIndex().row(),1)->setForeground(QColor(255,140,0));
-        GlobalVar::settings->setValue("myStock",GlobalVar::mMyStockCode);
+            pFundFlow->model->item(pTableStock->stockTableView->currentIndex().row(),1)->setForeground(QColor(255,140,0));
+        m_pGlobalVar->settings->setValue("myStock",*m_pMyStockCode);
     });
-
 }
+
 void MainWindow::showSearchResult()
 {
-    if (GlobalVar::isBoard)
+    if (m_pGlobalVar->isBoard)
     {
-        resetKParameter();
+      //  resetKParameter();
         searchSmallWindow->hide();
-        GlobalVar::WhichInterface=1;
-        mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-        mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
-        mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(0,0));
-        emit startThreadTable();
+        m_pGlobalVar->WhichInterface=CNMARKET;
+        pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+        pTableStock->stockTableView->setModel(pTableStock->m_tableModel);
+        pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(0,0));
+        emit startThreadTable(false);
         toInterFace("main");
+        //pTableStock->risingSpeedView->show();
+        //pTableStock->myStockView->show();
         middleWindow->show();
     }
     else
     {
-//        GlobalVar::isKState=true;
+        m_pGlobalVar->isKState=true;
         resetKParameter();
+
         searchSmallWindow->hide();
-        emit startThreadCandleChart(freq,adjustFlag,true);
+        lastTime=QDateTime::currentDateTime();
+        bWantReqKline=true;
+        bool bFirst;
+        if (m_PreCode != m_pGlobalVar->curCode)
+        {
+            bFirst=true;
+            m_PreCode = m_pGlobalVar->curCode;
+        }
+        else
+        {
+            bFirst=false;
+        }
+        emit startThreadCandleChart(freq,adjustFlag,  bFirst);
         emit startThreadTimeShareChart(false);
         emit startThreadTimeShareTick(false);
         toInterFace("k");
     }
 }
+
 void MainWindow::resetKParameter()
 {
-    GlobalVar::offsetEnd=GlobalVar::settings->value("offsetEnd").toInt();
-    GlobalVar::KRange=KRANGE;
-    GlobalVar::offsetLocal=GlobalVar::KRange;
-    preCode="";
+  //  m_pGlobalVar->offsetEnd=m_pGlobalVar->settings->value("offsetEnd").toInt();
+    m_pGlobalVar->KRange=KRANGE;
+    m_pGlobalVar->offsetLocal=m_pGlobalVar->KRange;
     isFlashBaseInfo=true;
 }
+
 void MainWindow::dealWithFundFlow()
 {
     int n=periodBox->currentIndex();
@@ -2000,27 +2725,28 @@ void MainWindow::dealWithFundFlow()
         QMessageBox::information(this,"提示","东方只能查看1日、5日和10日",QMessageBox::Ok);
         return;
     }
-    dateEdit->setDate(GlobalVar::curRecentWorkDay(0).date());
-    tradedetailBox->setItemText(0,GlobalVar::curRecentWorkDay(1).toString("yyyy-MM-dd"));
+    dateEdit->setDate(m_pGlobalVar->curRecentWorkDay(0).date());
+    tradedetailBox->setItemText(0,m_pGlobalVar->curRecentWorkDay(1).toString("yyyy-MM-dd"));
 
-    GlobalVar::isKState=false;
-    ifCanClick=0;
-    GlobalVar::WhichInterface=4;
+    m_pGlobalVar->isKState=false;
+    ifCanClick=NORMALCLICK;
+    m_pGlobalVar->WhichInterface=FUNDFLOW;
     toInterFace("fund");
     int days[]={1,3,5,10,20};
-    mFundFlow.getEastPlateFundFlow(days[n]);
-    mTableStock.stockTableView->setModel(mFundFlow.model);
-    mTableStock.stockTableView->setColumnWidth(0,140);
-    mTableStock.stockTableView->setColumnWidth(5,120);
-    mTableStock.stockTableView->setColumnWidth(12,160);
+    pFundFlow->getEastPlateFundFlow(days[n]);
+    pTableStock->stockTableView->setModel( pFundFlow->model);
+    pTableStock->stockTableView->setColumnWidth(0,140);
+    pTableStock->stockTableView->setColumnWidth(5,120);
+    pTableStock->stockTableView->setColumnWidth(12,160);
     for (int i=1;i<5;++i)
-        mTableStock.stockTableView->setColumnWidth(i,100);
+        pTableStock->stockTableView->setColumnWidth(i,100);
     for (int i=6;i<12;++i)
-        mTableStock.stockTableView->setColumnWidth(i,100);
+        pTableStock->stockTableView->setColumnWidth(i,100);
 }
 void MainWindow::fastTrade()
 {
-    if ((GlobalVar::WhichInterface!=1 and GlobalVar::WhichInterface!=4) or GlobalVar::curCode.left(1)=="1" or tradePrice==0)
+#if 0
+    if ((m_pGlobalVar->WhichInterface!=CNMARKET and m_pGlobalVar->WhichInterface!=FUNDFLOW) or m_pGlobalVar->curCode.left(1)=="1" or tradePrice==0)
         return;
     QMenu *menu=new QMenu(this);
     menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -2053,7 +2779,7 @@ void MainWindow::fastTrade()
         QDialog *fastBuy=new QDialog();
         fastBuy->setAttribute(Qt::WA_DeleteOnClose);
         fastBuy->setWindowFlags(fastBuy->windowFlags() | Qt::WindowStaysOnTopHint);
-        fastBuy->setWindowTitle(GlobalVar::curName.split("(")[0]+" "+"闪电买入");
+        fastBuy->setWindowTitle(m_pGlobalVar->curName.split("(")[0]+" "+"闪电买入");
         fastBuy->setGeometry(670, 200, 260, 300);
 
         QLabel *infoName[5];
@@ -2074,14 +2800,14 @@ void MainWindow::fastTrade()
             infoName[i]->setStyleSheet("QLabel{font:16px;font-family:微软雅黑}");
             tradeInfo->addWidget(infoName[i],i,0);
         }
-        QLabel *code=new QLabel(GlobalVar::curCode,fastBuy);
+        QLabel *code=new QLabel(m_pGlobalVar->curCode,fastBuy);
         QLabel *fix=new QLabel("限价委托",fastBuy);
         QDoubleSpinBox *price=new QDoubleSpinBox(fastBuy);
         QLabel *unit=new QLabel("元",fastBuy);
         QLabel *unit1=new QLabel("股",fastBuy);
         QLabel *unit2=new QLabel("股",fastBuy);
 
-        QLabel *maxNumbers=new QLabel(GlobalVar::curCode,fastBuy);
+        QLabel *maxNumbers=new QLabel(m_pGlobalVar->curCode,fastBuy);
         QSpinBox *buyNums=new QSpinBox(fastBuy);
         buyNums->setRange(0,1000000);
         buyNums->setSingleStep(100);
@@ -2137,7 +2863,7 @@ void MainWindow::fastTrade()
             //     qDebug()<<"get function failed";
 
             PyObject* args = PyTuple_New(4);
-            QString code=GlobalVar::curCode;
+            QString code=m_pGlobalVar->curCode;
             if (code.mid(0,1)=='3' or code.mid(0,1)=='0')
                 code=code+".SZ";
             else
@@ -2170,7 +2896,7 @@ void MainWindow::fastTrade()
 //        if(!pFunTrade)
 //            qDebug()<<"get function failed";
         PyObject* args = PyTuple_New(2);
-        QString stockCode=GlobalVar::curCode;
+        QString stockCode=m_pGlobalVar->curCode;
         if (stockCode.mid(0,1)=='3' or stockCode.mid(0,1)=='0')
             stockCode=stockCode+".SZ";
         else
@@ -2186,7 +2912,7 @@ void MainWindow::fastTrade()
         QDialog *fastSell=new QDialog();
         fastSell->setAttribute(Qt::WA_DeleteOnClose);
         fastSell->setWindowFlags(fastSell->windowFlags() | Qt::WindowStaysOnTopHint);
-        fastSell->setWindowTitle(GlobalVar::curName.split("(")[0]+" "+"闪电卖出");
+        fastSell->setWindowTitle(m_pGlobalVar->curName.split("(")[0]+" "+"闪电卖出");
         fastSell->setGeometry(670, 200, 260, 300);
 
         QLabel *infoName[5];
@@ -2206,14 +2932,14 @@ void MainWindow::fastTrade()
             infoName[i]->setStyleSheet("QLabel{font:16px;font-family:微软雅黑}");
             tradeInfo->addWidget(infoName[i],i,0);
         }
-        QLabel *code=new QLabel(GlobalVar::curCode,fastSell);
+        QLabel *code=new QLabel(m_pGlobalVar->curCode,fastSell);
         QLabel *fix=new QLabel("限价委托",fastSell);
         QDoubleSpinBox *price=new QDoubleSpinBox(fastSell);
         QLabel *unit=new QLabel("元",fastSell);
         QLabel *unit1=new QLabel("股",fastSell);
         QLabel *unit2=new QLabel("股",fastSell);
 
-        QLabel *numbers=new QLabel(GlobalVar::curCode,fastSell);
+        QLabel *numbers=new QLabel(m_pGlobalVar->curCode,fastSell);
         QSpinBox *sellNums=new QSpinBox(fastSell);
         sellNums->setRange(0,1000000);
         int maxNums=l[1].toInt();
@@ -2259,7 +2985,7 @@ void MainWindow::fastTrade()
             //     qDebug()<<"get function failed";
 
             PyObject* args = PyTuple_New(4);
-            QString code=GlobalVar::curCode;
+            QString code=m_pGlobalVar->curCode;
             if (code.mid(0,1)=='3' or code.mid(0,1)=='0')
                 code=code+".SZ";
             else
@@ -2283,137 +3009,290 @@ void MainWindow::fastTrade()
         mainLayout->addSpacing(15);
         fastSell->show();
     });
+#endif
 }
 void MainWindow::delMyStock()
 {
-    int curIndex=mTableStock.myStockView->currentIndex().row();
+    int curIndex=pTableStock->myStockView->currentIndex().row();
     if (curIndex==-1)
         return;
-    GlobalVar::mMyStockList.removeAt(curIndex);
-    GlobalVar::mMyStockCode.removeAt(curIndex);
-    if (curIndex==mTableStock.m_myStockModel->rowCount()-1)
+    m_pMyStockList->removeAt(curIndex);
+    m_pMyStockCode->removeAt(curIndex);
+    if (curIndex==pTableStock->m_myStockModel->rowCount()-1)
         curIndex-=1;
-    mTableStock.m_myStockModel->setModelData(GlobalVar::mMyStockList,false,false);
-    mTableStock.myStockView->setCurrentIndex(mTableStock.m_myStockModel->index(curIndex,0));
-    mTableStock.m_risingSpeedModel->setModelData(GlobalVar::mRisingSpeedList,false,true);
-    mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,false,true);
-    GlobalVar::settings->setValue("myStock",GlobalVar::mMyStockCode);
+    pTableStock->m_myStockModel->setModelData(*m_pMyStockList,false,false,true);
+    pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(curIndex,0));
+    pTableStock->m_risingSpeedModel->setModelData(*m_pRisingSpeedList,false,true,false);
+    pTableStock->m_tableModel->setModelData(*m_pTableList,false,true,false);
+    m_pGlobalVar->settings->setValue("myStock",*m_pMyStockCode);
 }
+
 void MainWindow::updateFeeling(QDate date)
-{
-    QString d=date.toString("yyyy-MM-dd");
-    QFile file(GlobalVar::currentPath+"/list/feeling.csv");
-    if (file.open(QFile::ReadOnly))
+{    
+    if (not m_pTimeShareChartList->isEmpty())
     {
-        QTextStream in(&file);
-        QString s = in.readAll();
-        QList l=s.split("\n");
-        for (int i=0;i<l.size();++i)
+        QString qStrTime =  m_pTimeShareChartList->at(0).time;
+        QDateTime tt = QDateTime::fromString(qStrTime, "yyyy-MM-dd hh:mm");
+        QDate tt_ = tt.date();
+        if (tt_ ==date)
         {
-            QList v=l[i].split(",");
-            if (d==v[0])
-            {
-                feelingData[0]->setText(v[2]);
-                feelingData[1]->setText(v[4]);
-                feelingData[2]->setText(v[6]+"/"+v[8]);
-                feelingData[3]->setText(GlobalVar::format_conversion(v[10].toDouble()));
-                feelingData[4]->setText(v[3]);
-                feelingData[5]->setText(v[5]);
-                feelingData[6]->setText(v[7]+"/"+v[9]);
-                file.close();
-                return;
-            }
+          feelingData[0]->setText(QString::number(m_pGlobalVar->upNums[0]));
+          feelingData[1]->setText(QString::number(m_pGlobalVar->upNums[1]));
+          feelingData[2]->setText(QString::number(m_pGlobalVar->upNums[2])+"/"+QString::number(m_pGlobalVar->upNums[3]));
+          feelingData[4]->setText(QString::number(m_pGlobalVar->downNums[0]));
+          feelingData[5]->setText(QString::number(m_pGlobalVar->downNums[1]));
+          feelingData[6]->setText(QString::number(m_pGlobalVar->downNums[2])+"/"+QString::number(m_pGlobalVar->downNums[3]));
+          feelingData[3]->setText(format_conversion(threadIndex->totalAmount));
+          return;
         }
-        file.close();
-        if (date!=QDate::currentDate())
-            QMessageBox::information(this,"提示","没有此日期数据",QMessageBox::Ok);
+    }
+    QString d=date.toString("yyyy-MM-dd");
+    QFile file(m_pGlobalVar->currentPath+"/list/feeling.csv");
+    if (!file.open(QFile::ReadOnly))
+    {
+        feelingData[0]->setText("--");
+        feelingData[1]->setText("--");
+        feelingData[2]->setText("--/--");
+        feelingData[3]->setText("--");
+        feelingData[4]->setText("--");
+        feelingData[5]->setText("--");
+        feelingData[6]->setText("--/--");
+       // QMessageBox::information(this,"提示","没有此日期数据",QMessageBox::Ok);
+        return;
+    }
+    QTextStream in(&file);
+    QString s = in.readAll();
+    file.close();
+    QList l=s.split("\n");
+    int nCount = l.size();
+    for (int i=0;i<nCount;++i)
+    {
+        QList v=l[i].split(",");
+        if (v.size()>=11 and  d==v[0])
+        {
+          feelingData[0]->setText(v[2]);
+          feelingData[1]->setText(v[4]);
+          feelingData[2]->setText(v[6]+"/"+v[8]);
+          feelingData[3]->setText(format_conversion(v[10].toDouble()));
+          feelingData[4]->setText(v[3]);
+          feelingData[5]->setText(v[5]);
+          feelingData[6]->setText(v[7]+"/"+v[9]);
+          return;
+        }
+    }
+    if (date!=QDate::currentDate()){
+        feelingData[0]->setText("--");
+        feelingData[1]->setText("--");
+        feelingData[2]->setText("--/--");
+        feelingData[3]->setText("--");
+        feelingData[4]->setText("--");
+        feelingData[5]->setText("--");
+        feelingData[6]->setText("--/--");
+      //  QMessageBox::information(this,"提示","没有此日期数据",QMessageBox::Ok);
     }
 }
+
 void MainWindow::tradingTimeRunThread()
 {
     QDateTime curTime=QDateTime::currentDateTime();
 //    if (not ui->DLAllStockK->isEnabled() and curTime.time().toString("hh:mm")>"15:00")
 //        ui->DLAllStockK->setEnabled(true);
-    if (timeCount%2==0 and GlobalVar::WhichInterface==1 and GlobalVar::isZhMarketDay(curTime))
-        emit startThreadTimeShareTick(false);
-    if (timeCount%6==1 and GlobalVar::WhichInterface==1)
+
+    if (timeCount%2==0 ) // and m_pGlobalVar->WhichInterface==CNMARKET and m_pGlobalVar->isZhMarketDay(curTime))
     {
-        if (GlobalVar::isZhMarketDay(curTime))
+        QDate date = curTime.date();
+        int weekDay = date.dayOfWeek();
+        if ((weekDay!=6 and weekDay!=7 and (m_pGlobalVar->WhichInterface==CNMARKET or m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==FUNDFLOW)) or
+            ( weekDay!=7 and (m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET))
+            )
         {
-            circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
-            if (GlobalVar::isBoard)
-                searchStock.getBoardData();
-            emit startThreadTable();
+           // qDebug()<<"m_pGlobalVar->WhichInterface=" << m_pGlobalVar->WhichInterface <<" " <<m_pGlobalVar->curCode;
+            QStringList list=m_pGlobalVar->curCode.split(".");
+            QString market ;
+            if (list.size()!=1)
+                market =list[0];
+            else
+                market =m_pGlobalVar->curCode.left(3);
+            if (m_pGlobalVar->isTradeTime(curTime)  or
+                  market=="100" or market=="133" or market=="122" or market=="104" or market=="103" or market=="90")
+            {
+                  emit startThreadTimeShareTick(false);
+            }
+        }
+    }
+
+    if (timeCount%6==1 and m_pGlobalVar->WhichInterface==CNMARKET)
+    {
+        //if (m_pGlobalVar->isZhMarketDay(curTime))
+        if (m_pGlobalVar->isTradeTime(curTime))
+        {
+            circle->setStyleSheet(CIRCLE_GREEN_SHEETSTYLE);
+            if (m_pGlobalVar->isBoard)
+                pSearchStock->getBoardData(m_pTableList);
+            emit startThreadTable(false);
             emit startThreadTimeShareChart(false);
         }
         else
-            circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+            circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
     }
     else if (timeCount%10==4)
     {
-        if (GlobalVar::isWorkDay(curTime))
-            emit startThreadIndex();
+        if (isWorkDay(curTime) or ((m_pGlobalVar->isTradeTime(curTime)) and  m_pGlobalVar->WhichInterface==CNMARKET ))
+            emit startThreadIndex(false);
         else
             reFlashIndex();
-        if (GlobalVar::WhichInterface==5)
-        {
-            if (GlobalVar::isUSMarketDay(curTime))
+
+        if (m_pGlobalVar->isKState==true){ // fixed add 2024.10.9
+
+            //ReqKtimeCount++;
+            bool bReq=false;
+
+            if (freq=="1"){
+                int seconds = lastTime.secsTo(curTime);
+                if (seconds>=59){
+                     bReq= true;
+                }
+            }
+            else if (freq=="5"){
+                int seconds = lastTime.secsTo(curTime);
+                if (seconds>=295){
+                    bReq= true;
+                }
+            }
+            else if (freq=="15"){
+                int seconds = lastTime.secsTo(curTime);
+                if (seconds>=995){
+                    bReq= true;
+                }
+            }
+            else if (freq=="30"){
+                int seconds = lastTime.secsTo(curTime);
+                if (seconds>=1800){
+                    bReq= true;
+                }
+            }
+            else if (freq=="60"){
+                int seconds = lastTime.secsTo(curTime);
+                if (seconds>=3600){
+                    bReq= true;
+                }
+            }
+
+            QDate date = curTime.date();
+            int weekDay = date.dayOfWeek();
+            if ( bReq and  (( weekDay!=6 and weekDay!=7 and (m_pGlobalVar->WhichInterface==CNMARKET or m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==FUNDFLOW)) or
+                                                    ( weekDay!=7 and (m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET)))
+                )
             {
-                circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
-                emit startThreadTable();
+              //  qDebug()<<"m_pGlobalVar->WhichInterface=" << m_pGlobalVar->WhichInterface <<" " <<m_pGlobalVar->curCode;
+                QStringList list=m_pGlobalVar->curCode.split(".");
+                QString market ;
+                if (list.size()!=1)
+                    market =list[0];
+                else
+                    market =m_pGlobalVar->curCode.left(3);
+
+                if ( not bWantReqKline and ( m_pGlobalVar->isTradeTime(curTime) or
+                                       market=="100" or market=="133" or market=="122" or market=="104" or market=="103" or market=="90"))
+                {
+
+                    bWantReqKline=true;
+                    lastTime=QDateTime::currentDateTime();
+                    emit startThreadCandleChart(freq,adjustFlag,false);
+                }
+            }
+        }
+
+        if (m_pGlobalVar->WhichInterface==USMARKET)
+        {
+            if (m_pGlobalVar->isUSMarketDay(curTime))
+            {
+                circle->setStyleSheet(CIRCLE_GREEN_SHEETSTYLE);
+                emit startThreadTable(false);
                 emit startThreadTimeShareTick(false);
                 emit startThreadTimeShareChart(false);
             }
             else
-                circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+                circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
         }
-        else if (GlobalVar::WhichInterface==2)
+        else if (m_pGlobalVar->WhichInterface==HKMARKET)
         {
-            if (GlobalVar::isHKMarketDay(curTime))
+            //if (m_pGlobalVar->isHKMarketDay(curTime))
+            if (m_pGlobalVar->isTradeTime(curTime))
             {
-                circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
-                emit startThreadTable();
+                circle->setStyleSheet(CIRCLE_GREEN_SHEETSTYLE);
+                emit startThreadTable(false);
                 emit startThreadTimeShareTick(false);
                 emit startThreadTimeShareChart(false);
             }
             else
-                circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+                circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
         }
-        else if (GlobalVar::WhichInterface==6)
+        else if (m_pGlobalVar->WhichInterface==UKMARKET)
         {
-            if (GlobalVar::isUKMarketDay(curTime))
+            if (m_pGlobalVar->isUKMarketDay(curTime))
             {
-                circle->setStyleSheet(GlobalVar::circle_green_SheetStyle);
-                emit startThreadTable();
+                circle->setStyleSheet(CIRCLE_GREEN_SHEETSTYLE);
+                emit startThreadTable(false);
                 emit startThreadTimeShareTick(false);
                 emit startThreadTimeShareChart(false);
             }
             else
-                circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+                circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
         }
-        else if (GlobalVar::WhichInterface==4)
-            circle->setStyleSheet(GlobalVar::circle_red_SheetStyle);
+        else if (m_pGlobalVar->WhichInterface==FUNDFLOW)
+            circle->setStyleSheet(CIRCLE_RED_SHEETSTYLE);
     }
     else if (timeCount==30)
     {
         emit startThreadGetNews();
-        QString d=curTime.date().toString("yyyy-MM-dd");
-        if (d>downloadDate and GlobalVar::isWorkDay(curTime) and curTime.time().toString("hh:mm")>="09:00")
+        QString curDate=curTime.date().toString("yyyy-MM-dd");
+
+        //接口要求相隔1小时以上
+        static bool bFirst=true;
+        int qdtDelta = dldlastTime.secsTo(curTime);
+        if ( (curDate>downloadDate and (bFirst or (not bFirst and  qdtDelta>60*60)))  and isWorkDay(curTime) and curTime.time().toString("hh:mm")>="08:50")
         {
-            QStringList vacation=GlobalVar::settings->value("Vacation_ZH").toStringList();
+            QDateTime curNow=m_pGlobalVar->curWorkDay();
+            QDate t_= curNow.date();
+            dateEdit1->setDate(t_);
+
+            QStringList vacation=m_pGlobalVar->settings->value("Vacation_ZH").toStringList();
             QString cur_date=curTime.toString("MMdd");
+
             if (not vacation.contains(cur_date))
             {
-                requestsToCsv.downStockIndexPlateInfo();
-                GlobalVar::settings->setValue("curTime",d);
-                downloadDate=d;
-                emit startThreadTimeShareChart(true);
+                bFirst=false;
+                bool bResult=pRequestsToCsv->downStockIndexPlateInfo();
+                if (bResult){
+                  m_pGlobalVar->settings->setValue("curTime",curDate);
+                  downloadDate=curDate;
+                }
+
+                dldlastTime=QDateTime::currentDateTime();
+                //try init                                                
+                QString qStrDate =m_pGlobalVar->settings->value("isInitDone").toString();
+
+                cur_date= curNow.toString("yyyy-MM-dd");
+                qDebug() <<"tradingTimeRunThread "<<  cur_date <<"," <<qStrDate ;
+                if (qStrDate !=cur_date ) // cur_date)
+                {
+                  if (!m_pGlobalVar->isBoard) {
+                    qDebug() <<"***init**** ";
+                    emit startThreadTable(true);
+                  }
+                  else
+                    emit startThreadTable(false);
+                  m_pGlobalVar->settings->setValue("isInitDone", cur_date);
+                }
+                emit startThreadTimeShareChart(false);
                 emit startThreadTimeShareTick(true);
+                emit startThreadIndex(true);
             }
         }
-        if (d>feelingDate and curTime.time().toString("hh:mm")>"15:00")
+        if (curDate>feelingDate and curTime.time().toString("hh:mm")>"15:00")
         {
-            QFile file(GlobalVar::currentPath+"/list/feeling.csv");
+            QFile file(m_pGlobalVar->currentPath+"/list/feeling.csv");
             if (file.open(QFile::ReadOnly))
             {
                 QTextStream in(&file);
@@ -2425,19 +3304,20 @@ void MainWindow::tradingTimeRunThread()
                     in.seek(post+1);
                 QString oneLine = in.readLine();
                 QString str=oneLine.mid(0,oneLine.indexOf(","));
-                if (str!=d)
+                if (str!=curDate)
                 {
                     file.close();
                     if (file.open(QFile::Append))
                     {
                         QStringList dataList;
-                        dataList<<d<<"";
+                        dataList<<curDate<<"";
                         for (int i=0;i<4;++i)
-                            dataList<<QString::number(GlobalVar::upNums[i])<<QString::number(GlobalVar::downNums[i]);
+                            dataList<<QString::number(m_pGlobalVar->upNums[i])<<QString::number(m_pGlobalVar->downNums[i]);
                         dataList<<QString::number(threadIndex->totalAmount,'f',2)<<"";
                         file.write(dataList.join(",").toLocal8Bit()+"\n");
                     }
-                    GlobalVar::settings->setValue("feelingTime",d);
+                    feelingDate =curDate;
+                    m_pGlobalVar->settings->setValue("feelingTime",curDate);
                 }
                 file.close();
             }
@@ -2446,15 +3326,18 @@ void MainWindow::tradingTimeRunThread()
     }
     timeCount+=1;
 }
+
 void MainWindow::reFlashIndex()
 {
     changeInTurn=not changeInTurn;
 //    qDebug()<<ui->statusBar->children();
     int n;
-    for (int i = 2; i<=12; i=i+2)
+    QPushButton *qBtn;
+    QLabel *lbl;
+    for (int i = 2; i<=12; i+=2)
     {
-        QPushButton *bb = (QPushButton *)(ui->statusBar->children().at(i));
-        QLabel *bl = (QLabel *)(ui->statusBar->children().at(i+1));
+        qBtn = (QPushButton *)(ui->statusBar->children().at(i));
+        lbl = (QLabel *)(ui->statusBar->children().at(i+1));
         if (isAsia)
         {
             if ((i==8 or i==10 or i==12) and not changeInTurn)
@@ -2469,14 +3352,16 @@ void MainWindow::reFlashIndex()
             else
                 n=i/2+8;
         }
-        bb->setText(GlobalVar::mIndexList.at(n).name);
-        if (GlobalVar::mIndexList.at(n).pctChg.toFloat()>0)
-            bl->setPalette(GlobalVar::pRed);
-        else if (GlobalVar::mIndexList.at(n).pctChg.toFloat()<0)
-            bl->setPalette(GlobalVar::pGreen);
+        if (n>=m_pIndexList->size())
+            continue;
+        qBtn->setText(m_pIndexList->at(n).name);
+        if (m_pIndexList->at(n).pctChg.toFloat()>0)
+            lbl->setPalette(m_pGlobalVar->pRed);
+        else if (m_pIndexList->at(n).pctChg.toFloat()<0)
+            lbl->setPalette(m_pGlobalVar->pGreen);
         else
-            bl->setPalette(GlobalVar::pBlack);
-        bl->setText(GlobalVar::mIndexList.at(n).close+" "+GlobalVar::mIndexList.at(n).pctChg+"%");
+            lbl->setPalette(m_pGlobalVar->pBlack);
+        lbl->setText(m_pIndexList->at(n).close+" "+m_pIndexList->at(n).pctChg+"%");
     }
     int m=20;
     n=19;
@@ -2485,401 +3370,477 @@ void MainWindow::reFlashIndex()
         n=18;
         m=21;
     }
-    QPushButton *bb = (QPushButton *)(ui->statusBar->children().at(14));
-    bb->setText(GlobalVar::mIndexList.at(n).name);
-    QLabel *bl = (QLabel *)(ui->statusBar->children().at(15));
-    if (GlobalVar::mIndexList.at(n).pctChg.toFloat()>0)
-        bl->setPalette(GlobalVar::pRed);
-    else if (GlobalVar::mIndexList.at(n).pctChg.toFloat()<0)
-        bl->setPalette(GlobalVar::pGreen);
+    if (n>=m_pIndexList->size())
+        return;
+    qBtn = (QPushButton *)(ui->statusBar->children().at(14));
+    qBtn->setText(m_pIndexList->at(n).name);
+    lbl = (QLabel *)(ui->statusBar->children().at(15));
+    if (m_pIndexList->at(n).pctChg.toFloat()>0)
+        lbl->setPalette(m_pGlobalVar->pRed);
+    else if (m_pIndexList->at(n).pctChg.toFloat()<0)
+        lbl->setPalette(m_pGlobalVar->pGreen);
     else
-        bl->setPalette(GlobalVar::pBlack);
-    bl->setText(GlobalVar::mIndexList.at(n).close+" "+GlobalVar::mIndexList.at(n).pctChg+"%");
-    bb = (QPushButton *)(ui->statusBar->children().at(16));
-    bb->setText(GlobalVar::mIndexList.at(m).name);
-    bl = (QLabel *)(ui->statusBar->children().at(18));
-    if (GlobalVar::mIndexList.at(m).pctChg.toFloat()>0)
-        bl->setPalette(GlobalVar::pRed);
-    else if (GlobalVar::mIndexList.at(m).pctChg.toFloat()<0)
-        bl->setPalette(GlobalVar::pGreen);
+        lbl->setPalette(m_pGlobalVar->pBlack);
+    lbl->setText(m_pIndexList->at(n).close+" "+m_pIndexList->at(n).pctChg+"%");
+    qBtn= (QPushButton *)(ui->statusBar->children().at(16));
+    qBtn->setText(m_pIndexList->at(m).name);
+    lbl = (QLabel *)(ui->statusBar->children().at(18));
+    if (m_pIndexList->at(m).pctChg.toFloat()>0)
+        lbl->setPalette(m_pGlobalVar->pRed);
+    else if (m_pIndexList->at(m).pctChg.toFloat()<0)
+        lbl->setPalette(m_pGlobalVar->pGreen);
     else
-        bl->setPalette(GlobalVar::pBlack);
-    bl->setText(GlobalVar::mIndexList.at(m).close+" "+GlobalVar::mIndexList.at(m).pctChg+"%");
+        lbl->setPalette(m_pGlobalVar->pBlack);
+    lbl->setText(m_pIndexList->at(m).close+" "+m_pIndexList->at(m).pctChg+"%");
 }
-void MainWindow::reFlashBuySellBaseInfo()
+void MainWindow::reFlashBuySellBaseInfo()  //显示5档挂盘买卖价
 {
     QString str;
-    int d=GlobalVar::setRound();
+    int nums,d=m_pGlobalVar->setRound();
+    float price;
     for (int i=0;i<10;++i)
     {
-        float price=GlobalVar::buySellPrice[i];
+        price=m_pGlobalVar->buySellPrice[i];
         if (price==0)
             str="";
         else
         {
             str=QString::number(price,'f',d);
-            if (price>GlobalVar::preClose)
-                buySellPrice[i]->setPalette(GlobalVar::pRed);
-            else if (price<GlobalVar::preClose)
-                buySellPrice[i]->setPalette(GlobalVar::pGreen);
+            if (price>m_pGlobalVar->preClose)
+                buySellPrice[i]->setPalette(m_pGlobalVar->pRed);
+            else if (price<m_pGlobalVar->preClose)
+                buySellPrice[i]->setPalette(m_pGlobalVar->pGreen);
             else
-                buySellPrice[i]->setPalette(GlobalVar::pBlack);
+                buySellPrice[i]->setPalette(m_pGlobalVar->pBlack);
         }
         buySellPrice[i]->setText(str);
-        int nums=GlobalVar::buySellNum[i];
+        nums=m_pGlobalVar->buySellNum[i];
         if (nums==0)
             str="";
         else
         {
             if (nums>1000000)
-                str=GlobalVar::format_conversion(nums);
+                str=format_conversion(nums);
             else
                 str=QString::number(nums);
         }
         buySellNum[i]->setText(str);
     }
-    if (!isFlashBaseInfo)
+    if (!isFlashBaseInfo){
+        if (m_pGlobalVar->isKState)
+            pDrawChart->candleChart->update();
         return;
-    if (GlobalVar::baseInfoData[1]>0)
-    {
-        baseInfoData[0]->setPalette(GlobalVar::pRed);
-        baseInfoData[1]->setPalette(GlobalVar::pRed);
     }
-    else if(GlobalVar::baseInfoData[1]<0)
+    if (m_pGlobalVar->baseInfoData[1]>0)
     {
-        baseInfoData[0]->setPalette(GlobalVar::pGreen);
-        baseInfoData[1]->setPalette(GlobalVar::pGreen);
+        baseInfoData[0]->setPalette(m_pGlobalVar->pRed);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pRed);
+    }
+    else if(m_pGlobalVar->baseInfoData[1]<0)
+    {
+        baseInfoData[0]->setPalette(m_pGlobalVar->pGreen);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pGreen);
     }
     else
     {
-        baseInfoData[0]->setPalette(GlobalVar::pBlack);
-        baseInfoData[1]->setPalette(GlobalVar::pBlack);
+        baseInfoData[0]->setPalette(m_pGlobalVar->pBlack);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pBlack);
     }
 
-    baseInfoData[0]->setText(QString::number(GlobalVar::baseInfoData[0],'f',d));
-    for (int i=1;i<3;++i)
-        baseInfoData[i]->setText(QString::number(GlobalVar::baseInfoData[i],'f',2)+"%");
-    for (int i=3;i<7;++i)
-        baseInfoData[i]->setText(GlobalVar::format_conversion(GlobalVar::baseInfoData[i]));
-    float pct=0;
+    baseInfoData[0]->setText(FormatNumber(m_pGlobalVar->baseInfoData[0],d,""));
+   // for (int i=1;i<3;++i){
+    //qDebug()<<m_pGlobalVar->baseInfoData[1] <<" "<<m_pGlobalVar->preClose;
+        baseInfoData[1]->setText(FormatNumber(m_pGlobalVar->baseInfoData[1],2,"%"));
+        baseInfoData[2]->setText(FormatNumber(m_pGlobalVar->baseInfoData[2],2,"%"));
+    //}
+    for (int i=3;i<7;++i){
+        baseInfoData[i]->setText(format_conversion(m_pGlobalVar->baseInfoData[i]));
+    }
+    float v,pct=0;
     for (int i=7;i<10;++i)
     {
-        float v=GlobalVar::baseInfoData[i];
-        if (GlobalVar::preClose==0 or v==0)
+        v=m_pGlobalVar->baseInfoData[i];
+        if (m_pGlobalVar->preClose==0 or v==0)
             pct=0;
         else
-            pct=(v-GlobalVar::preClose)*100/GlobalVar::preClose;
-        baseInfoData[i]->setText(QString::number(v,'f',d)+"("+GlobalVar::format_conversion(pct)+"%)");
+            pct=(v-m_pGlobalVar->preClose)*100.0f/m_pGlobalVar->preClose;
+
+        if (pct!=0)
+          baseInfoData[i]->setText(QString::number(v,'f',d)+"("+format_conversion(pct)+"%)");
+        else
+           baseInfoData[i]->setText("--");
+
         if (pct>0)
-            baseInfoData[i]->setPalette(GlobalVar::pRed);
+            baseInfoData[i]->setPalette(m_pGlobalVar->pRed);
         else if(pct<0)
-            baseInfoData[i]->setPalette(GlobalVar::pGreen);
+            baseInfoData[i]->setPalette(m_pGlobalVar->pGreen);
         else
-            baseInfoData[i]->setPalette(GlobalVar::pBlack);
+            baseInfoData[i]->setPalette(m_pGlobalVar->pBlack);
     }
-    for (int i=10;i<14;++i)
-        if(i==12)
-            baseInfoData[i]->setText(QString::number(GlobalVar::baseInfoData[i],'f',3));
-        else
-            baseInfoData[i]->setText(GlobalVar::format_conversion(GlobalVar::baseInfoData[i]));
-    stockCode->setText(GlobalVar::curCode);
-    stockName->setText(GlobalVar::curName);
-    EPSLabel->setText(GlobalVar::EPSReportDate);
-    PELabel->setText(GlobalVar::PEName);
+    for (int i=10;i<14;++i) {
+          if(i==12)
+            baseInfoData[i]->setText(FormatNumber(m_pGlobalVar->baseInfoData[i],3,""));
+          else
+            baseInfoData[i]->setText(format_conversion(m_pGlobalVar->baseInfoData[i]));
+    }
+    stockCode->setText(m_pGlobalVar->curCode);
+    stockName->setText(m_pGlobalVar->curName);
+    EPSLabel->setText(m_pGlobalVar->EPSReportDate);
+    PELabel->setText(m_pGlobalVar->PEName);
+    if (m_pGlobalVar->isKState)
+     pDrawChart->candleChart->update();
 }
+    
 void MainWindow::flashOldCandleInfo(QMouseEvent *mouseEvent)
 {
-    int m=(mouseEvent->pos().x()-KWIDTHEDGE)*GlobalVar::KRange/(drawChart.candleChart->width()-2*KWIDTHEDGE-KRIGHTWIDTHEDGE);
-//    qDebug()<<m<<GlobalVar::KRange;
-    int n;
-    if (GlobalVar::mCandleChartList.count()<GlobalVar::KRange)
-        n=m;
-    else
-        n=GlobalVar::mCandleChartList.count()-GlobalVar::offsetLocal+m;
-    if (n>GlobalVar::mCandleChartList.count()-1 or n<0)
+    int nKdCount= (int)m_pKline->size();
+    if (nKdCount==0)
+    {
         return;
-    float temp=GlobalVar::mCandleChartList.at(n).pctChg;
+    }
+    float aveWidth =  pDrawChart->CandleChartWidth() / m_pGlobalVar->KRange;
+    int w = aveWidth / 4;
+    if ((w % 2) == 0){
+        w++;
+    }
+    QPoint mPoint =mouseEvent->pos();
+    int x= mPoint.x();
+    int nIdx = pDrawChart->XTransferCandleChart(x+w);
+    int begin = nKdCount -m_pGlobalVar->offsetLocal;
+    if ( begin <0){
+        begin =0;
+    }
+    nIdx+=begin;
+
+    if (nIdx>(nKdCount -1) or nIdx<0){
+        nIdx= nKdCount-1;
+    }
+   
+    pDrawChart->Cross_Cursor_Idx= nIdx;
+    std::vector<CL::Kline>::iterator ptr = m_pKline->begin();
+    float temp=(ptr+nIdx)->pctChg;
     if (temp>0)
     {
-        baseInfoData[0]->setPalette(GlobalVar::pRed);
-        baseInfoData[1]->setPalette(GlobalVar::pRed);
+        baseInfoData[0]->setPalette(m_pGlobalVar->pRed);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pRed);
     }
     else if(temp<0)
     {
-        baseInfoData[0]->setPalette(GlobalVar::pGreen);
-        baseInfoData[1]->setPalette(GlobalVar::pGreen);
+        baseInfoData[0]->setPalette(m_pGlobalVar->pGreen);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pGreen);
     }
     else
     {
-        baseInfoData[0]->setPalette(GlobalVar::pBlack);
-        baseInfoData[1]->setPalette(GlobalVar::pBlack);
+        baseInfoData[0]->setPalette(m_pGlobalVar->pBlack);
+        baseInfoData[1]->setPalette(m_pGlobalVar->pBlack);
     }
-    baseInfoData[0]->setText(QString::number(GlobalVar::mCandleChartList.at(n).close));
-    baseInfoData[1]->setText(QString::number(GlobalVar::mCandleChartList.at(n).pctChg)+"%");
-    baseInfoData[2]->setPalette(GlobalVar::pBlue);
-    baseInfoData[3]->setPalette(GlobalVar::pBlue);
-    baseInfoData[12]->setPalette(GlobalVar::pBlue);
-    baseInfoData[2]->setText(GlobalVar::format_conversion(GlobalVar::mCandleChartList.at(n).turn)+"%");
-    baseInfoData[3]->setText(GlobalVar::format_conversion(GlobalVar::mCandleChartList.at(n).amount));
-    baseInfoData[12]->setText(GlobalVar::format_conversion(GlobalVar::mCandleChartList.at(n).vol));
-    if (GlobalVar::WhichInterface==1)
-        baseInfoData[13]->setText(GlobalVar::format_conversion(GlobalVar::mCandleChartList.at(n).vol*10000/GlobalVar::mCandleChartList.at(n).turn));
+    baseInfoData[0]->setText(QString::number((ptr+nIdx)->close));
+    if ((ptr+nIdx)->pctChg!=0)
+      baseInfoData[1]->setText(FormatNumber((ptr+nIdx)->pctChg,2,"%"));
+    else{
+      if (nIdx>0 && (ptr+nIdx)->pctChg==0 && freq!="1"){
+            temp = ((ptr+nIdx)->close-(ptr+nIdx-1)->close)*100.0f/(ptr+nIdx-1)->close;
+            baseInfoData[1]->setText(FormatNumber( temp,2,"%"));
+       }
+       else
+         baseInfoData[1]->setText("--");
+    }
+    baseInfoData[2]->setPalette(m_pGlobalVar->pBlue);
+    baseInfoData[3]->setPalette(m_pGlobalVar->pBlue);
+    baseInfoData[12]->setPalette(m_pGlobalVar->pBlue);
+    baseInfoData[2]->setText(FormatNumber((ptr+nIdx)->turn,2,"%"));
+
+    baseInfoData[3]->setText(format_conversion((ptr+nIdx)->amount));
+
+    baseInfoData[12]->setText(format_conversion((ptr+nIdx)->vol));
+
+    QString  strType="";
+
+    if (m_pGlobalVar->curCode.contains("."))
+        strType =m_pGlobalVar->curCode.split(".")[0];
+    if (strType =="104"){
+      baseInfoData[13]->setText("--");
+
+    }
     else
-        baseInfoData[13]->setText(GlobalVar::format_conversion(GlobalVar::mCandleChartList.at(n).vol*100/GlobalVar::mCandleChartList.at(n).turn));
-    if (n==0)
-        temp=GlobalVar::mCandleChartList.at(n).close/(1+GlobalVar::mCandleChartList.at(n).pctChg/100);
+    {   
+      if (m_pGlobalVar->WhichInterface==CNMARKET)
+        baseInfoData[13]->setText(format_conversion((ptr+nIdx)->vol*10000/(ptr+nIdx)->turn));
+      else
+        baseInfoData[13]->setText(format_conversion((ptr+nIdx)->vol*100/(ptr+nIdx)->turn));
+    }
+    if (nIdx==0)
+        temp=(ptr+nIdx)->close/(1+(ptr+nIdx)->pctChg/100);
     else
-        temp=GlobalVar::mCandleChartList.at(n-1).close;
-    QList<float> t={GlobalVar::mCandleChartList.at(n).open,GlobalVar::mCandleChartList.at(n).high,
-                    GlobalVar::mCandleChartList.at(n).low,temp};
+        temp=m_pKline->at(nIdx-1).close;
+
+    QList<float> t={(ptr+nIdx)->open,(ptr+nIdx)->high,
+                   (ptr+nIdx)->low,temp};
     for (int i=0;i<3;++i)
     {
         if (t[i]>t[3])
-            baseInfoData[i+9]->setPalette(GlobalVar::pRed);
+            baseInfoData[i+9]->setPalette(m_pGlobalVar->pRed);
         else if (t[i]<t[3])
-            baseInfoData[i+9]->setPalette(GlobalVar::pGreen);
+            baseInfoData[i+9]->setPalette(m_pGlobalVar->pGreen);
         else
-            baseInfoData[i+9]->setPalette(GlobalVar::pBlack);
+            baseInfoData[i+9]->setPalette(m_pGlobalVar->pBlack);
         baseInfoData[i+9]->setText(QString::number(t[i])+"("+QString::number((t[i]-temp)*100/temp,'f',2)+"%)");
     }
-    drawChart.rowTime->show();
+    pDrawChart->lblrowTime->show();
 
-    if (mouseEvent->pos().ry()>drawChart.candleChart->height()*12/15)
+    if (mPoint.ry()>pDrawChart->CandleChartBottom())
     {
-        float vol=drawChart.candleHighLowPoint[2]-drawChart.candleHighLowPoint[2]*(mouseEvent->pos().ry()-drawChart.candleChart->height()*12/15-KBOTTOMHEIGHTEDGE)/(drawChart.candleChart->height()*3/15-2*KBOTTOMHEIGHTEDGE);
-        drawChart.colPrice->setText(GlobalVar::format_conversion(int(vol)));
+        float vol=pDrawChart->candleHighLowPoint[2]-pDrawChart->candleHighLowPoint[2]*(mPoint.ry()-pDrawChart->CandleChartHeight())/(pDrawChart->candleChart->height()-pDrawChart->CandleChartHeight());
+        pDrawChart->lblcolPrice->setText(format_conversion(int(vol)));
     }
     else
     {
-        if (mouseEvent->pos().ry()>=KTOPHEIGHTEDGE)
+        if (mPoint.ry()>=KTOPHEIGHTEDGE)
         {
-            float price=drawChart.candleHighLowPoint[0]-(drawChart.candleHighLowPoint[0]-drawChart.candleHighLowPoint[1])*(mouseEvent->pos().ry()-KTOPHEIGHTEDGE)/(drawChart.candleChart->height()*12/15-2*KTOPHEIGHTEDGE);
-            drawChart.colPrice->setText(QString::number(price,'f',2));
+            float price=  pDrawChart->YTransferCandleChart(mPoint.y()); // pDrawChart->candleHighLowPoint[0]-(pDrawChart->candleHighLowPoint[0]-pDrawChart->candleHighLowPoint[1])*(mPoint.ry()-KTOPHEIGHTEDGE)/(pDrawChart->candleChart->height()-pDrawChart->CandleChartHeight());
+            pDrawChart->lblcolPrice->setText(FormatNumber(price,2,""));
         }
     }
-    drawChart.colPrice->adjustSize();
-    drawChart.rowTime->setText(GlobalVar::mCandleChartList.at(n).time);
-    if (mouseEvent->pos().ry()>=KTOPHEIGHTEDGE)
+    pDrawChart->lblcolPrice->adjustSize();
+
+    QString qStrDate=getKlineDate((ptr+nIdx)->date);
+    pDrawChart->lblrowTime->setText(qStrDate);
+
+    if (mPoint.ry()>=KTOPHEIGHTEDGE)
     {
-        drawChart.colPrice->show();
-        drawChart.colPrice->move(drawChart.candleChart->width()-KRIGHTWIDTHEDGE,mouseEvent->pos().ry()-drawChart.colPrice->height());
-        drawChart.hKLine->move(0,mouseEvent->pos().ry());
+        pDrawChart->lblcolPrice->show();
+        pDrawChart->lblcolPrice->move(pDrawChart->CandleChartWidth(),mPoint.ry()-pDrawChart->lblcolPrice->height());
+        pDrawChart->hlblKLine->move(0,mPoint.ry());
     }
-    drawChart.rowTime->move(mouseEvent->pos().rx()-(mouseEvent->pos().x()-KWIDTHEDGE)*drawChart.rowTime->width()/(drawChart.candleChart->width()-2*KWIDTHEDGE-KRIGHTWIDTHEDGE),drawChart.candleChart->height()*12/15);
-    drawChart.vKLine->setStyleSheet("QLabel{border:2px dotted white;}");
-    drawChart.vKLine->resize(1,drawChart.candleChart->height());
-    drawChart.hKLine->setStyleSheet("QLabel{border:2px dotted white;}");
-    drawChart.hKLine->resize(drawChart.candleChart->width(),1);
-    int posX=(2*m+1)*(drawChart.candleChart->width()-2*KWIDTHEDGE-KRIGHTWIDTHEDGE)/(2*GlobalVar::KRange);
-    drawChart.vKLine->move(posX+KWIDTHEDGE,0);
-    drawChart.vKLine->show();
-    drawChart.hKLine->show();
+    pDrawChart->lblrowTime->move(mPoint.rx()-(mPoint.x()-KWIDTHEDGE)*pDrawChart->lblrowTime->width()/(pDrawChart->CandleChartWidth()),pDrawChart->CandleChartBottom());
+    pDrawChart->vlblKLine->setStyleSheet("QLabel{border:2px dotted white;}");
+    pDrawChart->vlblKLine->resize(1,pDrawChart->candleChart->height());
+    pDrawChart->hlblKLine->setStyleSheet("QLabel{border:2px dotted white;}");
+    pDrawChart->hlblKLine->resize(pDrawChart->candleChart->width(),1);
+    //int posX=(2*m+1)*(pDrawChart->candleChart->width()-2*KWIDTHEDGE-KRIGHTWIDTHEDGE)/(2*m_pGlobalVar->KRange);
+    //pDrawChart->vlblKLine->move(posX+KWIDTHEDGE,0);
+    pDrawChart->vlblKLine->move(x,0);
+    pDrawChart->vlblKLine->show();
+    pDrawChart->hlblKLine->show();
+    
+    pDrawChart->candleChart->update();
 }
+
+QString MainWindow::getKlineDate(time_t date)
+{
+    QDateTime  dateTime = QDateTime::fromSecsSinceEpoch(date);
+    QString qStrDate;
+     if (freq == "1" or freq == "5" or freq == "15" or freq == "30" or freq == "60")
+        qStrDate =dateTime.toString("yyyy-MM-dd HH:mm");
+    else
+        qStrDate =dateTime.toString("yyyy-MM-dd");
+
+    return qStrDate;
+}
+
 void MainWindow::toInterFace(QString which)
 {
     if (which=="main")
     {
-        GlobalVar::isKState=false;
+        m_pGlobalVar->isKState=false;
         isTraversalMyStock=false;
         rightFundWindow->hide();
-        drawChart.candleChart->hide();
+        pDrawChart->candleChart->hide();
         rightBaseWindow->show();
-        mTableStock.stockTableView->show();
-        int row=mTableStock.stockTableView->currentIndex().row();
+        pTableStock->stockTableView->show();
+        int row=pTableStock->stockTableView->currentIndex().row();
         if (row==-1)
             row=0;
-        mTableStock.stockTableView->setModel(mTableStock.m_tableModel);
-        mTableStock.m_tableModel->setModelData(GlobalVar::mTableList,true,true);
-        mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(row,0));
+        pTableStock->stockTableView->setModel(pTableStock->m_tableModel);
+        pTableStock->m_tableModel->setModelData(*m_pTableList,true,true,false);
+        pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(row,0));
     }
     else if (which=="k")
     {
-        GlobalVar::isKState=true;
-        mTableStock.stockTableView->hide();
+        m_pGlobalVar->isKState=true;
+        pTableStock->stockTableView->hide();
         middleWindow->hide();
         rightFundWindow->hide();
-        drawChart.candleChart->show();
+        pDrawChart->candleChart->show();
         rightBaseWindow->show();
         rightBaseWindow->setFocus();
-        mFundFlow.initAllNews();
-        drawChart.candleChart->update();
+        pFundFlow->initAllNews();
     }
     else if (which=="fund")
     {
-        GlobalVar::WhichInterface=4;
-        GlobalVar::isKState=false;
+        m_pGlobalVar->WhichInterface=FUNDFLOW;
+        m_pGlobalVar->isKState=false;
         isTraversalMyStock=false;
         rightBaseWindow->hide();
-        drawChart.candleChart->hide();
+        pDrawChart->candleChart->hide();
         middleWindow->hide();
         rightFundWindow->show();
-        mTableStock.stockTableView->show();
-//        mTableStock.stockTableView->setFocus();
+        pTableStock->stockTableView->show();
     }
     else if(which=="f3")
     {
-        if (GlobalVar::WhichInterface==2 or GlobalVar::WhichInterface==5 or GlobalVar::WhichInterface==6)
+        if (m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET)
         {
             QMessageBox::information(this,"提示", "只能查看A股", QMessageBox::Ok);
             return;
         }
-        if (GlobalVar::curCode.left(1)=="1" or GlobalVar::curCode.left(3)=="399" or GlobalVar::curCode.left(3)=="899")
+        if (m_pGlobalVar->curCode.left(1)=="1" or m_pGlobalVar->curCode.left(3)=="399" or m_pGlobalVar->curCode.left(3)=="899")
         {
             QMessageBox::information(this,"提示", "只能查看个股", QMessageBox::Ok);
             return;
         }
         F10SmallWindow->setFixedSize(675,500);
-        fTitle->setText(GlobalVar::curCode+" "+GlobalVar::curName.left(GlobalVar::curName.indexOf("(")));
+        fTitle->setText(m_pGlobalVar->curCode+" "+m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("(")));
         F10SmallWindow->show();
-        f10View.dealWithHotRank();
+        pF10View->dealWithHotRank();
     }
     else if(which=="f10")
     {
-        if (GlobalVar::curCode.left(1)=="1" or GlobalVar::curCode.left(3)=="399" or GlobalVar::curCode.left(3)=="899")
+        if (m_pGlobalVar->curCode.left(1)=="1" or m_pGlobalVar->curCode.left(3)=="399" or m_pGlobalVar->curCode.left(3)=="899")
         {
             QMessageBox::information(this,"提示", "只能查看个股", QMessageBox::Ok);
             return;
         }
-        if (GlobalVar::WhichInterface==2 or GlobalVar::WhichInterface==5 or GlobalVar::WhichInterface==6)
+        if (m_pGlobalVar->WhichInterface==HKMARKET or m_pGlobalVar->WhichInterface==USMARKET or m_pGlobalVar->WhichInterface==UKMARKET)
         {
             QMessageBox::information(this,"提示", "只能查看A股", QMessageBox::Ok);
             return;
         }
         F10SmallWindow->setFixedSize(1275,700);
-        fTitle->setText(GlobalVar::curCode+" "+GlobalVar::curName.left(GlobalVar::curName.indexOf("(")));
+        fTitle->setText(m_pGlobalVar->curCode+" "+m_pGlobalVar->curName.left(m_pGlobalVar->curName.indexOf("(")));
         F10SmallWindow->show();
-        f10View.dealWithMainIndex();
+        pF10View->dealWithMainIndex();
     }
     else
         QMessageBox::information(this,"提示", "界面转换错误", QMessageBox::Ok);
 }
 void MainWindow::toFundFlow()
 {
-    mTableStock.stockTableView->clearSpans();
+    pTableStock->stockTableView->clearSpans();
     if (sender()==fundFlow[0])
         dealWithFundFlow();
     else if((sender()==fundFlow[1]))
     {
-        ifCanClick=-1;
-        mFundFlow.getRoyalFlushFundFlow();
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        ifCanClick=OTHERCLICK;
+        pFundFlow->getRoyalFlushFundFlow();
+        pTableStock->stockTableView->setModel( pFundFlow->model);
     }
     else if((sender()==fundFlow[2]))
     {
-        ifCanClick=-1;
-        mFundFlow.getIntervalHighLow();
-        mTableStock.stockTableView->setSpan(2,8,29,8);
-        mTableStock.stockTableView->setIndexWidget(mFundFlow.model->index(2, 8), mFundFlow.tableChart);
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        ifCanClick=OTHERCLICK;
+        pFundFlow->getIntervalHighLow();
+        pTableStock->stockTableView->setSpan(2,8,29,8);
+        pTableStock->stockTableView->setIndexWidget( pFundFlow->model->index(2, 8), pFundFlow->tableChart);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
 
     }
     else if((sender()==fundFlow[3]))
     {
-        ifCanClick=2;
-        mFundFlow.getStockHot();
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        ifCanClick=FUNDFLOWCLICK;
+        pFundFlow->getStockHot(m_pMyStockCode,m_pTableListCopy);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
     }
     else if((sender()==fundFlow[4]))
     {
-        ifCanClick=2;
-        mFundFlow.getNotNormalStock();
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        ifCanClick=FUNDFLOWCLICK;
+        pFundFlow->getNotNormalStock(m_pMyStockCode);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
     }
     else if((sender()==fundFlow[5]))
     {
-        ifCanClick=2;
-        mFundFlow.getStockPoolStrong(dateEdit->date().toString("yyyyMMdd"));
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        ifCanClick=FUNDFLOWCLICK;
+        pFundFlow->getStockPoolStrong(m_pMyStockCode,dateEdit->date().toString("yyyyMMdd"));
+        pTableStock->stockTableView->setModel( pFundFlow->model);
         for (int i=0;i<15;++i)
-            mTableStock.stockTableView->setColumnWidth(i,90);
+            pTableStock->stockTableView->setColumnWidth(i,90);
     }
     else if((sender()==fundFlow[6]))
     {
-        ifCanClick=2;
+        ifCanClick=FUNDFLOWCLICK;
         QString days[]={"1","3","5","10","M","Q","Y"};
-        mFundFlow.getNorthFundFlow(days[northBox->currentIndex()]);
-        mTableStock.stockTableView->setModel(mFundFlow.model);
+        pFundFlow->getNorthFundFlow(m_pMyStockCode,days[northBox->currentIndex()]);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
         for (int i=0;i<14;++i)
-            mTableStock.stockTableView->setColumnWidth(i,90);
-        mTableStock.stockTableView->setColumnWidth(6,120);
-        mTableStock.stockTableView->setColumnWidth(7,120);
-        mTableStock.stockTableView->setColumnWidth(10,120);
-        mTableStock.stockTableView->setColumnWidth(11,120);
-        mTableStock.stockTableView->setColumnWidth(12,120);
+            pTableStock->stockTableView->setColumnWidth(i,90);
+        pTableStock->stockTableView->setColumnWidth(6,120);
+        pTableStock->stockTableView->setColumnWidth(7,120);
+        pTableStock->stockTableView->setColumnWidth(10,120);
+        pTableStock->stockTableView->setColumnWidth(11,120);
+        pTableStock->stockTableView->setColumnWidth(12,120);
     }
     else if((sender()==fundFlow[7]))
     {
-        ifCanClick=2;
+        ifCanClick=FUNDFLOWCLICK;
         int nums[]={1,3,5,10,30};
         int pages[]={1,1,1,2,4};
-        mFundFlow.getDragonTigerList(nums[tradedetailBox->currentIndex()],pages[tradedetailBox->currentIndex()]);
-        mTableStock.stockTableView->setModel(mFundFlow.model);
-        mTableStock.stockTableView->setColumnWidth(0,60);
-        mTableStock.stockTableView->setColumnWidth(1,75);
-        mTableStock.stockTableView->setColumnWidth(2,210);
+        pFundFlow->getDragonTigerList(m_pMyStockCode,nums[tradedetailBox->currentIndex()],pages[tradedetailBox->currentIndex()]);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
+        pTableStock->stockTableView->setColumnWidth(0,60);
+        pTableStock->stockTableView->setColumnWidth(1,75);
+        pTableStock->stockTableView->setColumnWidth(2,210);
         for (int i=3;i<9;++i)
-            mTableStock.stockTableView->setColumnWidth(i,75);
-        mTableStock.stockTableView->setColumnWidth(9,90);
-        mTableStock.stockTableView->setColumnWidth(10,100);
-        mTableStock.stockTableView->setColumnWidth(11,100);
-        mTableStock.stockTableView->setColumnWidth(12,65);
-        mTableStock.stockTableView->setColumnWidth(13,85);
-        mTableStock.stockTableView->setColumnWidth(14,300);
+            pTableStock->stockTableView->setColumnWidth(i,75);
+        pTableStock->stockTableView->setColumnWidth(9,90);
+        pTableStock->stockTableView->setColumnWidth(10,100);
+        pTableStock->stockTableView->setColumnWidth(11,100);
+        pTableStock->stockTableView->setColumnWidth(12,65);
+        pTableStock->stockTableView->setColumnWidth(13,85);
+        pTableStock->stockTableView->setColumnWidth(14,300);
     }
     else if((sender()==fundFlow[8]))
     {
-        ifCanClick=2;
+        ifCanClick=FUNDFLOWCLICK;
         QString nums[]={"01","02","03","04"};
         int pages[]={2,3,4,7};
-        mFundFlow.countSingleStockBoard(nums[singleStockBoard->currentIndex()],pages[singleStockBoard->currentIndex()]);
-        mTableStock.stockTableView->setModel(mFundFlow.model);
-        mTableStock.stockTableView->setColumnWidth(0,65);
-        mTableStock.stockTableView->setColumnWidth(1,80);
-        mTableStock.stockTableView->setColumnWidth(2,100);
-        mTableStock.stockTableView->setColumnWidth(3,65);
-        mTableStock.stockTableView->setColumnWidth(4,65);
-        mTableStock.stockTableView->setColumnWidth(5,65);
+        pFundFlow->countSingleStockBoard(m_pMyStockCode,nums[singleStockBoard->currentIndex()],pages[singleStockBoard->currentIndex()]);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
+        pTableStock->stockTableView->setColumnWidth(0,65);
+        pTableStock->stockTableView->setColumnWidth(1,80);
+        pTableStock->stockTableView->setColumnWidth(2,100);
+        pTableStock->stockTableView->setColumnWidth(3,65);
+        pTableStock->stockTableView->setColumnWidth(4,65);
+        pTableStock->stockTableView->setColumnWidth(5,65);
         for (int i=6;i<19;++i)
-            mTableStock.stockTableView->setColumnWidth(i,90);
+            pTableStock->stockTableView->setColumnWidth(i,90);
     }
     else if((sender()==fundFlow[9]))
     {
-        ifCanClick=-1;
+        ifCanClick=OTHERCLICK;
         QString ft[]={"all","gp","hh","zq","zs","qdii","lof","fof"};
         QString sc[]={"zzf", "6yzf", "6yzf", "6yzf", "6yzf", "6yzf", "6yzf", "6yzf"};
-        mFundFlow.openFundRank(ft[openFundBox->currentIndex()],sc[openFundBox->currentIndex()]);
-        mTableStock.stockTableView->setModel(mFundFlow.model);
-        mTableStock.stockTableView->setColumnWidth(0,65);
-        mTableStock.stockTableView->setColumnWidth(1,280);
-        mTableStock.stockTableView->setColumnWidth(2,100);
+        pFundFlow->openFundRank(ft[openFundBox->currentIndex()],sc[openFundBox->currentIndex()]);
+        pTableStock->stockTableView->setModel( pFundFlow->model);
+        pTableStock->stockTableView->setColumnWidth(0,65);
+        pTableStock->stockTableView->setColumnWidth(1,280);
+        pTableStock->stockTableView->setColumnWidth(2,100);
         for (int i=3;i<16;++i)
-            mTableStock.stockTableView->setColumnWidth(i,90);
+            pTableStock->stockTableView->setColumnWidth(i,90);
     }
 }
 void MainWindow::downUpLookStock(QWheelEvent *event)
 {
-    if (isThreadRunning)
+    if (isThreadRunning )
         return;
     isThreadRunning=true;
-    drawChart.hisTimeShareChart->close();
-    drawChart.annoucementWindow->close();
-    if (GlobalVar::isKState)
+    pDrawChart->hisTimeShareChart->close();
+    pDrawChart->annoucementWindow->close();
+    if (m_pGlobalVar->isKState)
     {
         resetKParameter();
-        int curRow=mTableStock.stockTableView->currentIndex().row();
+        int curRow=pTableStock->stockTableView->currentIndex().row();
         int counts=0;
-        if (ifCanClick==2)
-            counts=mFundFlow.model->rowCount()-1;
+        if (ifCanClick==FUNDFLOWCLICK)
+            counts= pFundFlow->model->rowCount()-1;
         else
         {
             if (isTraversalMyStock)
             {
-                counts=GlobalVar::mMyStockList.count()-1;
-                curRow=mTableStock.myStockView->currentIndex().row();
+                counts=m_pMyStockList->count()-1;
+                curRow=pTableStock->myStockView->currentIndex().row();
             }
             else
             {
-                counts=GlobalVar::mTableList.count()-1;
+                counts=m_pTableList->count()-1;
             }
 
         }
@@ -2895,30 +3856,91 @@ void MainWindow::downUpLookStock(QWheelEvent *event)
             if (curRow<0)
                 curRow=counts;
         }
-        if (ifCanClick==2)
+        if (ifCanClick==FUNDFLOWCLICK)
         {
-            GlobalVar::curCode=mFundFlow.model->item(curRow,0)->text();
-            mTableStock.stockTableView->setCurrentIndex(mFundFlow.model->index(curRow,0));
+            m_pGlobalVar->curCode= pFundFlow->model->item(curRow,0)->text();
+            pTableStock->stockTableView->setCurrentIndex( pFundFlow->model->index(curRow,0));
         }
         else
         {
             if (isTraversalMyStock)
             {
-                GlobalVar::curCode=GlobalVar::mMyStockList.at(curRow).code;
-                mTableStock.myStockView->setCurrentIndex(mTableStock.m_myStockModel->index(curRow,0));
+                m_pGlobalVar->curCode=m_pMyStockList->at(curRow).code;
+                pTableStock->myStockView->setCurrentIndex(pTableStock->m_myStockModel->index(curRow,0));
             }
             else
             {
-                GlobalVar::curCode=GlobalVar::mTableList.at(curRow).code;
-                mTableStock.stockTableView->setCurrentIndex(mTableStock.m_tableModel->index(curRow,0));
+                m_pGlobalVar->curCode=m_pTableList->at(curRow).code;
+                pTableStock->stockTableView->setCurrentIndex(pTableStock->m_tableModel->index(curRow,0));
             }
         }
-        //            qDebug()<<GlobalVar::curCode;
+        \
+        lastTime=QDateTime::currentDateTime();
+        bWantReqKline=true;
         emit startThreadCandleChart(freq,adjustFlag,true);
-        emit startThreadTimeShareChart(false);
+        emit startThreadTimeShareChart(true);
         emit startThreadTimeShareTick(true);
-        mFundFlow.initAllNews();
-        drawChart.candleChart->update();
+        pFundFlow->initAllNews();
     }
     isThreadRunning=false;
 }
+
+void MainWindow::EastWebTrade()
+{
+    if (!this->TradeMutex.tryLock()) {
+		return;
+	}
+}
+
+void MainWindow::SetSpeechRate()
+{
+    ttscfgDlg ttscfgDlg(m_pGlobalVar,this);
+    QObject::connect(&ttscfgDlg, &ttscfgDlg::RateChanged, this, &MainWindow::handleRateChanged);
+    QObject::connect(&ttscfgDlg, &ttscfgDlg::VolumeChanged, this, &MainWindow::handleVolumeChanged);
+    QObject::connect(&ttscfgDlg, &ttscfgDlg::PitchChanged, this, &MainWindow::handlePitchChanged);
+    ttscfgDlg.exec();   
+}
+
+void MainWindow::handleRateChanged(float value)
+{
+    threadNewsReport->tts->setRate(value);
+}
+
+//取值范围通常在0.0（静音）到1.0（最大音量）
+// ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_UP));
+// ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_DOWN));
+// ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_MUTE));
+void MainWindow::handleVolumeChanged(float value)
+{
+    // 获取默认音频设备
+   // ..QAudioDevice device =  QMediaDevices::defaultAudioOutput();
+   //..// QAudioDevice::Mode mode = device.mode();// 只是获取音量，不进行音频播放
+    
+    
+    //QAudioDeviceInfo info = QAudioDeviceInfo::defaultAudioDevice();
+    // 获取输入设备
+    //QList<QAudioDevice> inputDevices = QMediaDevices::audioInputs();
+    // 获取输出设备
+    //QList<QAudioDevice> outputDevices = QMediaDevices::audioOutputs();
+    
+    // 检查设备是否支持获取音量
+   // if (info.isValid()) {
+     //   qreal volume = info.defaultOutputVolume(); // 获取默认的音量大小
+    //}
+    float vol = threadNewsReport->tts->volume();
+   // if (value ==-1.0f)
+     //   ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_MUTE));
+    if (value <vol){       
+        ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_DOWN));
+    }
+    else if (value > vol){
+        ::SendMessage((HWND)(this->winId()), WM_APPCOMMAND, 0, MAKELPARAM(0,FAPPCOMMAND_KEY<<12|APPCOMMAND_VOLUME_UP));
+    }
+        
+    threadNewsReport->tts->setVolume(value);
+}
+
+void MainWindow::handlePitchChanged(float value)
+{
+  threadNewsReport->tts->setPitch(value);
+}    

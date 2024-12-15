@@ -7,24 +7,66 @@
 #include "tablestock.h"
 
 
-TableStock::TableStock()
+TableStock::TableStock( GlobalVar *pGlobalVar, QStringList *&pMyStockCode,QList<StockInfo> *&pMyStockList,
+                       QList<StockInfo> *&pTableList,
+                       QList<StockInfo> *&pRisingSpeedList,
+                       QList<timeShareTickInfo> *&pTimeShareTickList)
 {
+    m_pGlobalVar =pGlobalVar;
+    m_pMyStockCode=pMyStockCode;
+    m_pMyStockList=pMyStockList;
+    m_pTableList=pTableList;
+    m_pRisingSpeedList=pRisingSpeedList;
+    m_pTimeShareTickList=pTimeShareTickList;
+    isFlashTable=true;
+    preCode="";
+    preSize=0;
     stockTableView=new QTableView(this);
     blockView=new QTableView(this);
     risingSpeedView=new QTableView(this);
     myStockView=new QTableView(this);
+
     timeShareTickView=new QTableView(this);
 
-    timeShareTickView->setMinimumWidth(300);
+    /*timeShareTickView->setMinimumWidth(300);
     risingSpeedView->setMaximumWidth(285);
+    risingSpeedView->setMinimumHeight(496);
     myStockView->setMinimumHeight(496);
-    blockView->setMinimumWidth(785);
+    blockView->setMinimumWidth(785);*/
 
-    m_tableModel= new ModelTableStock(stockTableView);
-    m_fundFlowModel=new ModelFundFlow(blockView);
-    m_risingSpeedModel= new ModelTableStock(risingSpeedView);
-    m_myStockModel= new ModelTableStock(myStockView);
-    m_timeShareTickModel= new ModelTimeShare(timeShareTickView);
+    m_tableModel= new ModelTableStock(pGlobalVar,pMyStockCode,stockTableView);
+    m_fundFlowModel=new ModelFundFlow(pGlobalVar,blockView);
+    m_risingSpeedModel= new ModelTableStock(pGlobalVar,pMyStockCode,risingSpeedView);
+    m_myStockModel= new ModelTableStock(pGlobalVar,pMyStockCode,myStockView);
+
+    stockTableView->setFocusPolicy(Qt::StrongFocus);
+    blockView->setFocusPolicy(Qt::StrongFocus);
+    risingSpeedView->setFocusPolicy(Qt::StrongFocus);
+    myStockView->setFocusPolicy(Qt::StrongFocus);
+
+    stockTableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    blockView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    risingSpeedView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    myStockView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+  //  stockTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+    stockTableView->setSelectionMode(QAbstractItemView::SingleSelection);
+    blockView->setSelectionMode(QAbstractItemView::SingleSelection);
+    risingSpeedView->setSelectionMode(QAbstractItemView::SingleSelection);
+    myStockView->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    stockTableView->setTabKeyNavigation(false);
+    blockView->setTabKeyNavigation(false);
+    risingSpeedView->setTabKeyNavigation(false);
+    myStockView->setTabKeyNavigation(false);
+
+    timeShareTickView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+
+    m_timeShareTickModel= new ModelTimeShare(pGlobalVar,timeShareTickView);
+    timeShareTickView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
     initTableView();
 }
 
@@ -35,20 +77,20 @@ void TableStock::setTableView()
         row=0;
     if (isFlashTable)
     {
-        m_tableModel->setModelData(GlobalVar::mTableList,false,true);
+        m_tableModel->setModelData(*m_pTableList,false,true,false);
         stockTableView->setCurrentIndex(m_tableModel->index(row,0));
     }
-    if (GlobalVar::WhichInterface==1)
+    if (m_pGlobalVar->WhichInterface==CNMARKET)
     {
-        m_risingSpeedModel->setModelData(GlobalVar::mRisingSpeedList,false,true);
-        m_myStockModel->setModelData(GlobalVar::mMyStockList,false,false);
+        m_risingSpeedModel->setModelData(*m_pRisingSpeedList,false,true,false);
+        m_myStockModel->setModelData(*m_pMyStockList,false,false,true);
     }
 }
 
 void TableStock::setColumnWidth(QTableView *TV)
 {
 
-    if (GlobalVar::WhichInterface==2 || GlobalVar::WhichInterface==5 || GlobalVar::WhichInterface==6)
+    if (m_pGlobalVar->WhichInterface==HKMARKET || m_pGlobalVar->WhichInterface==USMARKET || m_pGlobalVar->WhichInterface==UKMARKET)
     {
         TV->setColumnWidth(0, 75);
         TV->setColumnWidth(1, 280);
@@ -92,12 +134,17 @@ void TableStock::setBlockView()
 
 void TableStock::setTimeShareTickView()
 {
-    m_timeShareTickModel->setModelData(GlobalVar::mTimeShareTickList);
-    if (preSize-timeShareTickView->verticalScrollBar()->value()==13 or
-        preCode!=GlobalVar::curCode)
+    if (m_pTimeShareTickList->isEmpty())
+    {
+        timeShareTickView->clearSpans();
+    }
+
+    m_timeShareTickModel->setModelData(*m_pTimeShareTickList);
+    if ((preSize-timeShareTickView->verticalScrollBar()->value())==13 or
+        preCode!=m_pGlobalVar->curCode)
         timeShareTickView->scrollToBottom();
-    preSize=GlobalVar::mTimeShareTickList.size();
-    preCode=GlobalVar::curCode;
+    preSize=m_pTimeShareTickList->size();
+    preCode=m_pGlobalVar->curCode;
     timeShareTickView->setColumnWidth(0,60);
     timeShareTickView->setColumnWidth(1,85);
     timeShareTickView->setColumnWidth(2,75);
@@ -120,17 +167,20 @@ void TableStock::initTableView()
     header->setSectionsMovable(true);
 
     connect(header,&QHeaderView::sectionMoved,this,[=](int /*logicIndex*/,int oldIndex,int newIndex){
-        StockInfo info=GlobalVar::mMyStockList.at(oldIndex);
-        GlobalVar::mMyStockList.remove(oldIndex);
-        GlobalVar::mMyStockList.insert(newIndex,info);
+        StockInfo info=m_pMyStockList->at(oldIndex);
+        m_pMyStockList->remove(oldIndex);
+        m_pMyStockList->insert(newIndex,info);
         QStringList s;
-        for (int i=0;i<GlobalVar::mMyStockList.count();++i)
-            s<<GlobalVar::mMyStockList.at(i).code;
-        GlobalVar::settings->setValue("myStock",s);
-        GlobalVar::mMyStockCode=s;
+        int nCount=m_pMyStockList->count();
+        for (int i=0;i<nCount;++i)
+            s<<m_pMyStockList->at(i).code;
+        m_pGlobalVar->settings->setValue("myStock",s);
+
+        *m_pMyStockCode=s;
+
         QList<StockInfo> t;
-        m_myStockModel->setModelData(t,false,false);
-        m_myStockModel->setModelData(GlobalVar::mMyStockList,false,false);
+        m_myStockModel->setModelData(t,false,false,true);
+        m_myStockModel->setModelData(*m_pMyStockList,false,false,true);
         myStockView->setCurrentIndex(m_myStockModel->index(newIndex,0));
     });
 
