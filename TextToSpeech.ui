@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TTSDlg</class>
+ <widget class="QDialog" name="TTSDlg">
+  <property name="windowModality">
+   <enum>Qt::WindowModality::WindowModal</enum>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>347</width>
+    <height>428</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>语音设置</string>
+  </property>
+  <property name="modal">
+   <bool>true</bool>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>342</width>
+     <height>423</height>
+    </rect>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QPlainTextEdit" name="plainTextEdit">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+      <property name="plainText">
+       <string>股市有风险，投资需谨慎！缠论量化，人类历史上第一个数学上可以严格证明的技术分析策略，包含严格笔，线段作为最低级别，中枢的构成，级别的扩展，第一二三类买卖点，同级别分解的，背驰的判断，区间套。
+    不懂缠论，就永远在财务自由的路上，这路能走通不，对于走路的人，是未知的。我这里能提供的只有，答案就在所有的缠论原文之中，经过回测，已经无数次的验证了其有效性。无论你是几个亿以下的小资金，还是大资金，都有方法。请坚定信念！如果你失败了一年，不妨再继续失败两年，当你绝望之际，终会回到原文，逼迫自己，求得真知。一亿多次访问量的博客，是不会骗你的。这正如无数人参加过的高考，有几个高中清华北大的。鄙人还是擦边弄了浙大。 有缘者自会明白。已经明白的也不必来这了，只与还在路上，并且经历失望又还是充满信心的人共勉。你们掌握了缠论，的确是会胜利的。答案就在那原文当中，就好比高考题的答案都在无数的教辅，教材之中一样。有缘之人，参与市场，解决他人流动性需求，自己还能持续赚钱生存。那个介入，退出的买卖点，在哪里？有缘人自会找到它的，共勉之！
+     缠论最大的问题是，走势类型无法完成。不能完成，最低级别的终结之点就无法固定，买入的时间就无从知晓。那种区间套所存在的情况，极其少见。 解决这个问题的方法有两种。第一种不说，第二种是，多头利用回拉中枢dd的必然上涨幅度，来忽略起止点的无法确定所带来的问题。 不足之处是回拉中枢dd，一般只在第二个中枢之后才出现，这在大级别上，下跌第二个中枢很少见。而且大级别的中枢级别，容易判断错误，很容易九段升级。 缠论量化，人类历史上第一个胜率严格为100%的技术分析策略，包含严格笔，线段作为最低级别，中枢的构成，级别的扩展，第一二三类买卖点，同级别分解，背驰的判断，区间套。
+     需要注意的问题。 笔和线段的划分是标准化的。意味着不可能在这方面上千人千缠。但是标准化的笔和段，里面有很多细节是可以有多种选择的。只要按照相同的标准进行划分的笔和线段，就能够构建最低级别的基本构件，这就是合理的。哪怕按照3根K线来构建最小级别中枢，也是合理的。线段，只是增强了稳定性和可操作性。 这多种选择包括： 
+     笔的划分： 是否次高点成笔，包含关系意义下的5根k线是否成笔，下降笔起始点顶分型第一根K线是否可以低点低于后面底分型低点，是否允许修正笔，大幅度跳空是否成笔，等等。 
+     线段的划分： 跳空成笔的笔当做线段，线段起始点不是最低最高点的标准化，价格相同是否认为是创新高，等等。当然按照定义，可以解决大部分问题。 
+     走势类型的划分： 走势的多义性，扩张中枢次级别的判定，小转大，中枢震荡中的小转大，同级别分解的如何确认当下分解，
+     线段类走势的级别，突发事件第二类买卖点的处理，等等。
+      需要注意，本策略的前提是假设没有流动性风险，也就是不会存在只有一个人交易，导致没有足够的对手方的情况。那种大资金的操作，不适合用本策略。
+      凡是认为缠论会因为知道的人多了，就渐渐失效的， 也请避免交流，这问题禅师本人早有叙述。万有引力定律，永远不失效。</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <layout class="QGridLayout" name="gridLayout">
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>语音引擎</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_3">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>音调</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_4">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>语言</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+        <property name="buddy">
+         <cstring>language</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="2">
+       <widget class="QSlider" name="pitch">
+        <property name="minimum">
+         <number>-100</number>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="singleStep">
+         <number>1</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_6">
+        <property name="text">
+         <string>朗读者</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QSlider" name="volume">
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="singleStep">
+         <number>5</number>
+        </property>
+        <property name="pageStep">
+         <number>20</number>
+        </property>
+        <property name="value">
+         <number>70</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="2">
+       <widget class="QComboBox" name="language">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="2">
+       <widget class="QComboBox" name="voice"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>语速</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>音量</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="2">
+       <widget class="QSlider" name="rate">
+        <property name="minimum">
+         <number>-100</number>
+        </property>
+        <property name="maximum">
+         <number>100</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Orientation::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="2">
+       <widget class="QComboBox" name="engine">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QPushButton" name="speakButton">
+        <property name="text">
+         <string>朗读</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pauseButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>暂停</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="resumeButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>继续</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="stopButton">
+        <property name="text">
+         <string>停止</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <spacer name="verticalSpacer">
+      <property name="orientation">
+       <enum>Qt::Orientation::Vertical</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>20</width>
+        <height>40</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>3</width>
+     <height>22</height>
+    </rect>
+   </property>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>plainTextEdit</tabstop>
+  <tabstop>speakButton</tabstop>
+  <tabstop>pauseButton</tabstop>
+  <tabstop>resumeButton</tabstop>
+  <tabstop>stopButton</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>
