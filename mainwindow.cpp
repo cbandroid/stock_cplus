@@ -3321,6 +3321,28 @@ void MainWindow::tradingTimeRunThread()
                 }
                 file.close();
             }
+            else
+            {
+                QDateTime qDateTime= m_pGlobalVar->curWorkDay();
+                curDate= qDateTime.date().toString("yyyy-MM-dd");
+                QDate t_= dateEdit1->date();
+                QString str= t_.toString("yyyy-MM-dd");
+                if ( curDate==str)
+                {
+                    if (file.open(QFile::WriteOnly))
+                    {
+                        QStringList dataList;
+                        dataList<<curDate<<"";
+                        for (int i=0;i<4;++i)
+                            dataList<<QString::number(m_pGlobalVar->upNums[i])<<QString::number(m_pGlobalVar->downNums[i]);
+                        dataList<<QString::number(threadIndex->totalAmount,'f',2)<<"";
+                        file.write(dataList.join(",").toLocal8Bit()+"\n");
+                        file.close();
+                        feelingDate =curDate;
+                        m_pGlobalVar->settings->setValue("feelingTime",curDate);
+                    }
+                }
+            }
         }
         timeCount=0;
     }
